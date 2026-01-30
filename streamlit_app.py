@@ -2,10 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. Page Configuration
+# ۱. تنظیمات صفحه
 st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# 2. RTL Styling
+# ۲. استایل‌دهی راست‌چین
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
@@ -17,7 +17,7 @@ st.markdown("""
 
 st.title("📋 پنل جامع ثبت و ویرایش اطلاعات")
 
-# 3. Connection
+# ۳. اتصال به گوگل‌شیت
 try:
     spreadsheet_url = st.secrets["public_gsheets_url"]
     conn = st.connection("gsheets", type=GSheetsConnection)
@@ -26,70 +26,72 @@ except Exception as e:
     st.error("خطا در اتصال به گوگل‌شیت.")
     st.stop()
 
-# 4. Preparation
+# ۴. آماده‌سازی لیست اسامی
 names_list = df['اسم'].dropna().unique().tolist()
 
-# Top Search for Edit Mode
+# منوی جستجو برای ویرایش
 search_query = st.selectbox(
     "🔍 برای ویرایش انتخاب کنید (برای ثبت جدید روی گزینه اول بمانید):", 
     ["+ افزودن مورد جدید"] + names_list
 )
 
-# 5. The Main Form
+# ۵. فرم اصلی
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
+        v_name = st.text_input("اسم:", placeholder="نام را وارد کنید...")
         
-        # We use st.text_input so the name NEVER clears when you click away
-        v_name = st.text_input("اسم:", placeholder="نام را تایپ کنید...")
-        
-        # REAL-TIME SEARCH (Shown only if typing)
         if v_name:
             matches = [n for n in names_list if v_name in n]
-            if matches:
-                if v_name in names_list:
-                    st.error(f"⚠️ این نام دقیقاً در لیست وجود دارد: {v_name}")
-                else:
-                    st.info(f"💡 نام‌های مشابه در لیست: {', '.join(matches[:5])}")
+            if v_name in names_list:
+                st.error(f"⚠️ نام '{v_name}' در لیست موجود است.")
+            elif matches:
+                st.info(f"💡 نام‌های مشابه: {', '.join(matches[:5])}")
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
         v_name = search_query
 
-    # --- Section 1: Personal Info ---
+    # --- بخش ۱: اطلاعات شخصی ---
     st.markdown("### 👤 اطلاعات شخصی")
     col1, col2, col3 = st.columns(3)
     with col1: v_bday = st.text_input("تاریخ تولد", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ تولد", "")))
     with col2: v_age = st.text_input("سن", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("سن", "")))
     with col3: v_gender = st.text_input("جنسیت", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("جنسیت", "")))
     
-    col_birth1, col_birth2 = st.columns(2)
-    with col_birth1: v_birth_place = st.text_input("محل تولد", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محل تولد", "")))
-    with col_birth2: v_city_base = st.text_input("شهر", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("شهر", "")))
+    v_birth_place = st.text_input("محل تولد", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محل تولد", "")))
 
     st.divider()
 
-    # --- Section 2: Details of Incident ---
+    # --- بخش ۲: جزئیات واقعه ---
     st.markdown("### 🔍 جزئیات واقعه")
-    col4, col5, col6 = st.columns(3)
-    with col4: v_province = st.text_input("استان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("استان", "")))
-    with col5: v_district = st.text_input("محله", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محله", "")))
-    with col6: v_street = st.text_input("خیابان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("خیابان", "")))
     
-    col_incident1, col_incident2 = st.columns(2)
-    with col_incident1: v_date = st.text_input("تاریخ", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ", "")))
-    with col_incident2: v_exact_loc = st.text_input("محل دقیق کشته شدن", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محل دقیق کشته شدن", "")))
+    # ردیف اول: استان - شهر - محله/خیابان
+    det_col1, det_col2, det_col3 = st.columns(3)
+    with det_col1: 
+        v_province = st.text_input("استان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("استان", "")))
+    with det_col2: 
+        v_city = st.text_input("شهر", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("شهر", "")))
+    with det_col3: 
+        v_district_street = st.text_input("محله/خیابان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محله/خیابان", "")))
     
+    # ردیف دوم: تاریخ شمسی - تاریخ میلادی
+    date_col1, date_col2 = st.columns(2)
+    with date_col1:
+        v_date_shamsi = st.text_input("تاریخ شمسی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ شمسی", "")))
+    with date_col2:
+        v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
+    
+    v_exact_loc = st.text_input("محل دقیق کشته شدن", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محل دقیق کشته شدن", "")))
     v_method = st.text_input("طریقه‌ی کشته شدن", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("طریقه‌ی کشته شدن", "")))
     v_grave = st.text_input("آرامگاه", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("آرامگاه", "")))
 
     st.divider()
 
-    # --- Section 3: Additional Info ---
+    # --- بخش ۳: اطلاعات تکمیلی ---
     st.markdown("### 🌐 اطلاعات تکمیلی")
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
-    v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
 
     submit = st.form_submit_button("💾 ذخیره نهایی")
@@ -99,21 +101,31 @@ with st.form("main_form"):
             st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
-                "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
-                "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
-                "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
-                "آرامگاه": v_grave, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
-                "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
+                "اسم": v_name, 
+                "استان": v_province, 
+                "شهر": v_city, 
+                "محله/خیابان": v_district_street, 
+                "تاریخ شمسی": v_date_shamsi, 
+                "تاریخ میلادی": v_date_en, 
+                "محل دقیق کشته شدن": v_exact_loc,
+                "طریقه‌ی کشته شدن": v_method, 
+                "آرامگاه": v_grave, 
+                "سن": v_age, 
+                "جنسیت": v_gender, 
+                "توضیحات": v_notes, 
+                "محل تولد": v_birth_place, 
+                "تاریخ تولد": v_bday, 
+                "اکانت در شبکه‌های اجتماعی": v_social, 
+                "بستگان در شبکه‌های اجتماعی": v_relatives
             }
             
             if search_query == "+ افزودن مورد جدید":
                 new_row = pd.DataFrame([updated_dict])
                 df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(data=df)
-                st.success(f"'{v_name}' با موفقیت ثبت شد.")
+                st.success(f"'{v_name}' ثبت شد.")
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                 conn.update(data=df)
-                st.success("بروزرسانی انجام شد.")
+                st.success("بروزرسانی شد.")
             st.rerun()
