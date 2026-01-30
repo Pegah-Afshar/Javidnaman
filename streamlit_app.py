@@ -9,27 +9,36 @@ st.title("📋 فرم ثبت و ویرایش اطلاعات")
 st.markdown(
     """
     <style>
-    /* Change the alignment of the main app container */
-    .main .block-container {
-        direction: RTL;
+    /* 1. Force the entire app to Right-to-Left */
+    [data-testid="stAppViewContainer"] {
+        direction: rtl;
         text-align: right;
     }
-    /* Align all input labels, text inputs, and text areas to the right */
-    div[data-baseweb="input"], div[data-baseweb="select"], div[data-baseweb="textarea"] {
-        direction: RTL;
-        text-align: right;
-    }
-    /* Fix the alignment of selectbox text */
-    div[data-testid="stSelectbox"] {
-        direction: RTL;
-    }
-    /* Ensure form buttons and labels are right-aligned */
-    .stButton>button {
-        float: right;
-    }
-    label {
-        width: 100%;
+
+    /* 2. Align all labels and input boxes */
+    label, div[data-testid="stMarkdownContainer"], .stSelectbox, .stTextInput, .stTextArea {
+        direction: rtl !important;
         text-align: right !important;
+        justify-content: flex-start !important;
+    }
+
+    /* 3. Fix the dropdown/selectbox alignment */
+    div[data-baseweb="select"] > div {
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    /* 4. Move the 'X' and arrow in the dropdown to the left side */
+    div[data-testid="stSelectbox"] svg {
+        right: auto !important;
+        left: 10px !important;
+    }
+    
+    /* 5. Force the form button to the right */
+    .stButton button {
+        display: block;
+        margin-right: 0;
+        margin-left: auto;
     }
     </style>
     """,
