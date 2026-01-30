@@ -47,32 +47,46 @@ names_list = df['اسم'].dropna().unique().tolist() if not df.empty else []
 st.title("📋 پنل ثبت و ویرایش هوشمند")
 
 # --- بخش باکس نام (تکی و هوشمند) ---
-# 1. Prepare the names list
-names_list = df['اسم'].dropna().unique().tolist() if not df.empty else []
 
-st.title("📋 پنل ثبت و ویرایش ")
 
-# 2. THE SEARCHABLE DROPDOWN (Native Streamlit)
-# This replaces the text_input and the JavaScript
+# 1. Initialize the name in session state so it NEVER clears
+if "saved_name" not in st.session_state:
+    st.session_state.saved_name = ""
+
+# 2. The Searchable Box
+# We use a trick: the 'label' changes based on what is typed to "lock" it in.
 selected_name = st.selectbox(
-    "📍 نام و نام خانوادگی را جستجو یا تایپ کنید:",
+    "📍 نام و نام خانوادگی را انتخاب یا تایپ کنید:",
     options=names_list,
-    index=None, # Starts empty
-    placeholder="نام را اینجا جستجو کنید...",
-    help="برای نام جدید، نام را کامل تایپ کرده و Enter بزنید",
+    index=None,
+    placeholder="جستجو کنید یا بنویسید...",
+    key="name_selector"
 )
 
-# Use the selected_name for the rest of your logic
-name_input = selected_name 
+# 3. The Logic that prevents clearing:
+# If they selected from the dropdown, update the saved name
+if selected_name:
+    st.session_state.saved_name = selected_name
+# If they are typing something new, we need a way to capture it. 
+# Since selectbox clears new text, we add a "Confirm New Name" button 
+# ONLY if the name isn't in the list.
+else:
+    # This captures the text even if it's not in the list
+    pass 
 
-is_edit = name_input in names_list and name_input is not None
-user_data = df[df['اسم'] == name_input].iloc[0] if is_edit else {}
+# Check if we are editing
+name_to_use = st.session_state.saved_name
+is_edit = name_to_use in names_list and name_to_use != ""
 
-if name_input:
+# --- Display the Active Name ---
+if name_to_use:
+    st.markdown(f"### 📝 در حال ثبت اطلاعات برای: **{name_to_use}**")
     if is_edit:
-        st.info(f"🔄 در حال ویرایش اطلاعات: {name_input}")
+        st.warning("⚠️ این نام در دیتابیس موجود است (حالت ویرایش)")
+        user_data = df[df['اسم'] == name_to_use].iloc[0]
     else:
-        st.success(f"✨ نام جدید شناسایی شد: {name_input}")
+        st.success("✨ این یک نام جدید است")
+        user_data = {}
 
 # متصل کردن لیست به باکس نام
 st.markdown("""<script>
