@@ -47,10 +47,32 @@ names_list = df['اسم'].dropna().unique().tolist() if not df.empty else []
 st.title("📋 پنل ثبت و ویرایش هوشمند")
 
 # --- بخش باکس نام (تکی و هوشمند) ---
-options_html = "".join([f'<option value="{n}">' for n in names_list])
-st.markdown(f'<datalist id="names_list">{options_html}</datalist>', unsafe_allow_html=True)
+# 1. Prepare the names list
+names_list = df['اسم'].dropna().unique().tolist() if not df.empty else []
 
-name_input = st.text_input("📍 نام و نام خانوادگی:", placeholder="تایپ کنید...", key="name_box")
+st.title("📋 پنل ثبت و ویرایش ")
+
+# 2. THE SEARCHABLE DROPDOWN (Native Streamlit)
+# This replaces the text_input and the JavaScript
+selected_name = st.selectbox(
+    "📍 نام و نام خانوادگی را جستجو یا تایپ کنید:",
+    options=names_list,
+    index=None, # Starts empty
+    placeholder="نام را اینجا جستجو کنید...",
+    help="برای نام جدید، نام را کامل تایپ کرده و Enter بزنید",
+)
+
+# Use the selected_name for the rest of your logic
+name_input = selected_name 
+
+is_edit = name_input in names_list and name_input is not None
+user_data = df[df['اسم'] == name_input].iloc[0] if is_edit else {}
+
+if name_input:
+    if is_edit:
+        st.info(f"🔄 در حال ویرایش اطلاعات: {name_input}")
+    else:
+        st.success(f"✨ نام جدید شناسایی شد: {name_input}")
 
 # متصل کردن لیست به باکس نام
 st.markdown("""<script>
