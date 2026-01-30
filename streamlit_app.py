@@ -2,69 +2,69 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. تنظیمات صفحه
+# ۱. تنظیمات صفحه
 st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# 2. استایل راست‌چین و ظاهر فرم
+# ۲. استایل‌دهی راست‌چین
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
     input { direction: rtl; text-align: right; }
+    div[data-baseweb="select"] { direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("📋 پنل جامع ثبت و ویرایش اطلاعات")
 
-# 3. اتصال به گوگل‌شیت
+# ۳. اتصال به گوگل‌شیت
 try:
     spreadsheet_url = st.secrets["public_gsheets_url"]
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 except Exception as e:
-    st.error(f"خطا در اتصال به گوگل‌شیت: {e}")
+    st.error(f"خطا در اتصال: {e}")
     st.stop()
 
-# 4. آماده‌سازی اسامی موجود
 names_list = df['اسم'].dropna().unique().tolist()
 
-# منوی انتخاب حالت (ویرایش یا جدید)
+# منوی جستجوی اصلی برای حالت ویرایش
 search_query = st.selectbox(
-    "🔍 برای ویرایش انتخاب کنید (برای ثبت جدید روی گزینه اول بمانید):", 
+    "🔍 جستجو برای ویرایش (برای مورد جدید روی گزینه اول بمانید):", 
     ["+ افزودن مورد جدید"] + names_list
 )
 
-# 5. فرم اصلی
+# ۵. فرم اصلی
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
         
-        # ایجاد لیست پیشنهادات مخفی در HTML
-        options_html = "".join([f'<option value="{n}">' for n in names_list])
-        st.markdown(f'<datalist id="names_datalist">{options_html}</datalist>', unsafe_allow_html=True)
+        # این باکس فقط برای جستجوی اسامی مشابه است و دکمه X دارد
+        suggested_name = st.selectbox(
+            "جستجوی نام‌های موجود (اگر نام جدید است این را خالی بگذارید):",
+            options=names_list,
+            index=None,
+            placeholder="تایپ کنید تا اسامی مشابه را ببینید...",
+        )
         
-        # باکس متن هوشمند (پاک نمی‌شود)
-        v_name = st.text_input("اسم:", key="name_field", placeholder="نام را وارد کنید...")
+        # این باکس اصلی نام است که هرگز پاک نمی‌شود
+        # اگر نامی از بالا انتخاب شود، اینجا پر می‌شود، وگرنه خودتان تایپ می‌کنید
+        v_name = st.text_input(
+            "اسم نهایی برای ثبت:", 
+            value=suggested_name if suggested_name else "",
+            placeholder="نام جدید را اینجا بنویسید..."
+        )
         
-        # جاوااسکریپت برای متصل کردن لیست پیشنهادات به باکس متن
-        st.markdown("""
-            <script>
-            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            for (var i = 0; i < inputs.length; i++) {
-                if (inputs[i].getAttribute('aria-label') == "اسم:") {
-                    inputs[i].setAttribute('list', 'names_datalist');
-                    inputs[i].setAttribute('autocomplete', 'off');
-                }
-            }
-            </script>
-            """, unsafe_allow_html=True)
+        if suggested_name:
+            st.warning(f"توجه: نام '{suggested_name}' قبلاً ثبت شده است. اگر هدف ثبت فرد جدیدی است، نام را تغییر دهید.")
+
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
         v_name = search_query
 
-    # --- بخش 1: اطلاعات شخصی ---
+    # --- بخش ۱: اطلاعات شخصی ---
     st.markdown("### 👤 اطلاعات شخصی")
     col1, col2, col3 = st.columns(3)
     with col1: v_bday = st.text_input("تاریخ تولد", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ تولد", "")))
@@ -75,16 +75,14 @@ with st.form("main_form"):
 
     st.divider()
 
-    # --- بخش 2: جزئیات واقعه ---
+    # --- بخش ۲: جزئیات واقعه ---
     st.markdown("### 🔍 جزئیات واقعه")
     
-    # ردیف اول: استان - شهر - محله/خیابان
     det_col1, det_col2, det_col3 = st.columns(3)
     with det_col1: v_province = st.text_input("استان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("استان", "")))
     with det_col2: v_city = st.text_input("شهر", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("شهر", "")))
     with det_col3: v_district_street = st.text_input("محله/خیابان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محله/خیابان", "")))
     
-    # ردیف دوم: تاریخ شمسی - تاریخ میلادی
     date_col1, date_col2 = st.columns(2)
     with date_col1: v_date_shamsi = st.text_input("تاریخ شمسی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ شمسی", "")))
     with date_col2: v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
@@ -95,8 +93,7 @@ with st.form("main_form"):
 
     st.divider()
 
-    # --- بخش 3: اطلاعات تکمیلی ---
-    st.markdown("### 🌐 اطلاعات تکمیلی")
+    # --- بخش ۳: اطلاعات تکمیلی ---
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
@@ -105,7 +102,7 @@ with st.form("main_form"):
 
     if submit:
         if not v_name or v_name.strip() == "":
-            st.error("⚠️ نام الزامی است.")
+            st.error("⚠️ وارد کردن نام الزامی است.")
         else:
             data_to_save = {
                 "اسم": v_name, "استان": v_province, "شهر": v_city, "محله/خیابان": v_district_street, 
@@ -114,16 +111,16 @@ with st.form("main_form"):
                 "توضیحات": v_notes, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
                 "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
             }
-            
             try:
                 if search_query == "+ افزودن مورد جدید":
-                    new_df = pd.concat([df, pd.DataFrame([data_to_save])], ignore_index=True)
+                    current_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
+                    new_df = pd.concat([current_df, pd.DataFrame([data_to_save])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, data=new_df)
-                    st.success(f"'{v_name}' با موفقیت ثبت شد.")
                 else:
                     df.loc[df['اسم'] == search_query, list(data_to_save.keys())] = list(data_to_save.values())
                     conn.update(spreadsheet=spreadsheet_url, data=df)
-                    st.success("تغییرات با موفقیت ذخیره شد.")
+                
+                st.success("اطلاعات با موفقیت ذخیره شد!")
                 st.rerun()
             except Exception as e:
                 st.error(f"خطا در ذخیره‌سازی: {e}")
