@@ -1,4 +1,4 @@
-streamlit
+streamlit-searchbox
 gspread
 google-auth
 pandas
