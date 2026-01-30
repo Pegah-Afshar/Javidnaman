@@ -11,6 +11,7 @@ st.markdown("""
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
+    div[data-baseweb="select"] { direction: rtl; }
     input { direction: rtl; text-align: right; }
     </style>
     """, unsafe_allow_html=True)
@@ -39,18 +40,25 @@ search_query = st.selectbox(
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
-        v_name = st.text_input("اسم:", placeholder="نام را وارد کنید...")
         
-        if v_name:
-            matches = [n for n in names_list if v_name in n]
-            if v_name in names_list:
-                st.error(f"⚠️ نام '{v_name}' در لیست موجود است.")
-            elif matches:
-                st.info(f"💡 نام‌های مشابه: {', '.join(matches[:5])}")
+        # استفاده از selectbox با قابلیت جستجو و دکمه X
+        # برای اینکه متن شما پاک نشود، از یک لیست ترکیبی استفاده می‌کنیم
+        v_name = st.selectbox(
+            "اسم (تایپ کنید تا اسامی موجود را ببینید):",
+            options=names_list,
+            index=None,
+            placeholder="نام را وارد کنید...",
+            key="new_name_key"
+        )
+        
+        # اگر نام در لیست نبود، کاربر می‌تواند در باکس زیر تایید کند (بدون پاک شدن)
+        v_manual_name = st.text_input("اگر نام جدید است و در لیست بالا نیست، اینجا بنویسید:")
+        final_name = v_name if v_name else v_manual_name
+        
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
-        v_name = search_query
+        final_name = search_query
 
     # --- بخش ۱: اطلاعات شخصی ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -66,7 +74,6 @@ with st.form("main_form"):
     # --- بخش ۲: جزئیات واقعه ---
     st.markdown("### 🔍 جزئیات واقعه")
     
-    # ردیف اول: استان - شهر - محله/خیابان
     det_col1, det_col2, det_col3 = st.columns(3)
     with det_col1: 
         v_province = st.text_input("استان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("استان", "")))
@@ -75,7 +82,6 @@ with st.form("main_form"):
     with det_col3: 
         v_district_street = st.text_input("محله/خیابان", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("محله/خیابان", "")))
     
-    # ردیف دوم: تاریخ شمسی - تاریخ میلادی
     date_col1, date_col2 = st.columns(2)
     with date_col1:
         v_date_shamsi = st.text_input("تاریخ شمسی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ شمسی", "")))
@@ -89,7 +95,6 @@ with st.form("main_form"):
     st.divider()
 
     # --- بخش ۳: اطلاعات تکمیلی ---
-    st.markdown("### 🌐 اطلاعات تکمیلی")
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
@@ -97,41 +102,27 @@ with st.form("main_form"):
     submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        if not v_name or v_name.strip() == "":
+        if not final_name or final_name.strip() == "":
             st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": v_name, 
-                "استان": v_province, 
-                "شهر": v_city, 
-                "محله/خیابان": v_district_street, 
-                "تاریخ شمسی": v_date_shamsi, 
-                "تاریخ میلادی": v_date_en, 
-                "محل دقیق کشته شدن": v_exact_loc,
-                "طریقه‌ی کشته شدن": v_method, 
-                "آرامگاه": v_grave, 
-                "سن": v_age, 
-                "جنسیت": v_gender, 
-                "توضیحات": v_notes, 
-                "محل تولد": v_birth_place, 
-                "تاریخ تولد": v_bday, 
-                "اکانت در شبکه‌های اجتماعی": v_social, 
-                "بستگان در شبکه‌های اجتماعی": v_relatives
+                "اسم": final_name, "استان": v_province, "شهر": v_city, "محله/خیابان": v_district_street, 
+                "تاریخ شمسی": v_date_shamsi, "تاریخ میلادی": v_date_en, "محل دقیق کشته شدن": v_exact_loc,
+                "طریقه‌ی کشته شدن": v_method, "آرامگاه": v_grave, "سن": v_age, "جنسیت": v_gender, 
+                "توضیحات": v_notes, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
+                "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
             }
             
             try:
                 if search_query == "+ افزودن مورد جدید":
                     new_row = pd.DataFrame([updated_dict])
                     df = pd.concat([df, new_row], ignore_index=True)
-                    # اضافه کردن spreadsheet_url به دستور update
                     conn.update(spreadsheet=spreadsheet_url, data=df)
-                    st.success(f"'{v_name}' با موفقیت ثبت شد.")
+                    st.success(f"'{final_name}' ثبت شد.")
                 else:
                     df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
-                    # اضافه کردن spreadsheet_url به دستور update
                     conn.update(spreadsheet=spreadsheet_url, data=df)
-                    st.success("بروزرسانی با موفقیت انجام شد.")
-                
+                    st.success("بروزرسانی شد.")
                 st.rerun()
             except Exception as e:
-                st.error(f"خطا در هنگام ذخیره: {e}")
+                st.error(f"خطا در ذخیره: {e}")
