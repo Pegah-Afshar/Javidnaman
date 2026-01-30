@@ -9,9 +9,8 @@ st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="w
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
-    label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
+    label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    div[data-baseweb="select"] { direction: rtl; }
     input { direction: rtl; text-align: right; }
     </style>
     """, unsafe_allow_html=True)
@@ -41,28 +40,21 @@ with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
         
-        # This is the ONE BOX. 
-        # In Streamlit, to allow "Typing a new name" while searching existing ones:
-        v_name = st.selectbox(
-            "اسم:",
-            options=names_list,
-            index=None,
-            placeholder="نام را وارد کنید (اگر جدید است تایپ کنید و Enter بزنید)...",
-            help="تایپ کنید تا اسامی مشابه را ببینید. اگر نام جدید است، آن را کامل بنویسید.",
-            key="name_box"
-        )
+        # We use st.text_input so the name NEVER clears when you click away
+        v_name = st.text_input("اسم:", placeholder="نام را تایپ کنید...")
         
-        # Logic to capture "Typed" text even if it's not in the list
-        # We check the session state to see what the user actually typed
-        if st.session_state.name_box is not None:
-            final_name = st.session_state.name_box
-        else:
-            final_name = None
-
+        # REAL-TIME SEARCH (Shown only if typing)
+        if v_name:
+            matches = [n for n in names_list if v_name in n]
+            if matches:
+                if v_name in names_list:
+                    st.error(f"⚠️ این نام دقیقاً در لیست وجود دارد: {v_name}")
+                else:
+                    st.info(f"💡 نام‌های مشابه در لیست: {', '.join(matches[:5])}")
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
-        final_name = search_query
+        v_name = search_query
 
     # --- Section 1: Personal Info ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -103,11 +95,11 @@ with st.form("main_form"):
     submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        if not final_name:
+        if not v_name or v_name.strip() == "":
             st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": final_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+                "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
                 "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
                 "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
                 "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
@@ -119,7 +111,7 @@ with st.form("main_form"):
                 new_row = pd.DataFrame([updated_dict])
                 df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(data=df)
-                st.success(f"'{final_name}' با موفقیت ثبت شد.")
+                st.success(f"'{v_name}' با موفقیت ثبت شد.")
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                 conn.update(data=df)
