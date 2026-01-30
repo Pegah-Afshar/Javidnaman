@@ -1,36 +1,65 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
+import pandas as pd
 
-st.title("Friends Information Portal")
+st.set_page_config(page_title="Friends Database", layout="centered")
+st.title("👯 Friends Info Portal")
 
-# Connect to Google Sheets
+# 1. Connect to Google Sheets
+# This uses the secrets you just saved
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read()
 
-# 1. SEARCH / DROPDOWN
+# 2. Read the current data
+# We clear the cache so we always see the newest info
+df = conn.read(ttl=0) 
+
+# 3. Search / Autocomplete Feature
 names_list = df['Name'].dropna().unique().tolist()
-search_query = st.selectbox("Search existing names or select 'Add New'", ["+ Add New"] + names_list)
+search_query = st.selectbox("Type a name to search or Edit:", ["+ Add New Person"] + names_list)
 
-if search_query == "+ Add New":
-    st.subheader("Add New Friend")
-    with st.form("new_form"):
-        new_name = st.text_input("Name")
-        new_phone = st.text_input("Phone")
-        new_city = st.text_input("City")
-        submit = st.form_submit_button("Save New Entry")
+# --- OPTION: ADD NEW PERSON ---
+if search_query == "+ Add New Person":
+    st.subheader("📝 Add a New Friend")
+    with st.form("add_form", clear_on_submit=True):
+        name = st.text_input("Full Name")
+        phone = st.text_input("Phone Number")
+        city = st.text_input("City")
+        notes = st.text_area("Notes")
+        
+        submit = st.form_submit_button("Save to List")
         
         if submit:
-            # Logic to save goes here
-            st.success(f"Added {new_name}!")
+            if name in names_list:
+                st.error(f"Error: '{name}' is already in the list! Use the search bar above to edit them.")
+            elif name == "":
+                st.warning("Please enter a name.")
+            else:
+                # Create a new row
+                new_data = pd.DataFrame([{"Name": name, "Phone": phone, "City": city, "Notes": notes}])
+                # Add to existing data
+                updated_df = pd.concat([df, new_data], ignore_index=True)
+                # Update the Google Sheet
+                conn.update(data=updated_df)
+                st.success(f"Successfully added {name}!")
+                st.balloons()
+
+# --- OPTION: EDIT EXISTING PERSON ---
 else:
-    st.subheader(f"Editing: {search_query}")
-    # Get the data for the selected person
-    user_data = df[df['Name'] == search_query].iloc[0]
+    st.subheader(f"Update Info for: {search_query}")
+    # Pull the current data for this specific person
+    user_row = df[df['Name'] == search_query].iloc[0]
     
     with st.form("edit_form"):
-        edit_phone = st.text_input("Phone", value=user_data['Phone'])
-        edit_city = st.text_input("City", value=user_data['City'])
-        update = st.form_submit_button("Update Info")
+        # We fill the boxes with the OLD info so they can just change what they need
+        new_phone = st.text_input("Phone Number", value=str(user_row['Phone']))
+        new_city = st.text_input("City", value=str(user_row['City']))
+        new_notes = st.text_area("Notes", value=str(user_row['Notes']))
         
-        if update:
-            st.info("Update logic triggered!")
+        update_button = st.form_submit_button("Save Changes")
+        
+        if update_button:
+            # Find where this person is in the list and update them
+            df.loc[df['Name'] == search_query, ['Phone', 'City', 'Notes']] = [new_phone, new_city, new_notes]
+            # Update the Google Sheet
+            conn.update(data=df)
+            st.success("Information updated successfully!")
