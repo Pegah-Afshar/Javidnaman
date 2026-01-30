@@ -11,9 +11,8 @@ st.markdown("""
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    div[data-testid="stExpander"] { text-align: right; direction: rtl; }
-    .stMetric { text-align: right; }
-    div[data-baseweb="popover"] { direction: rtl; }
+    div[data-baseweb="popover"] { direction: rtl; text-align: right; }
+    input { text-align: right; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -28,13 +27,14 @@ except Exception as e:
     st.error("خطا در اتصال به گوگل‌شیت.")
     st.stop()
 
-# 4. Search & Dropdown Section
+# 4. Global Data Preparation
 names_list = df['اسم'].dropna().unique().tolist()
 
+# Top Navigation: Choose between Edit or Add
 c_top1, c_top2 = st.columns([3, 1])
 with c_top1:
     search_query = st.selectbox(
-        "🔍 جستجو یا انتخاب فرد:", 
+        "🔍 جستجوی کلی (برای ویرایش انتخاب کنید):", 
         ["+ افزودن مورد جدید"] + names_list
     )
 with c_top2:
@@ -44,13 +44,30 @@ with c_top2:
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
-        v_name = st.text_input("اسم")
-        if v_name in names_list:
-            st.warning(f"⚠️ توجه: نام '{v_name}' در حال حاضر در لیست وجود دارد.")
+        
+        # --- FIX: Searchable Dropdown for Name Entry ---
+        # This box allows you to TYPE. As you type 'Ahmad', it shows all existing 'Ahmads'.
+        v_name = st.selectbox(
+            "اسم (تایپ کنید تا اسامی مشابه را ببینید):",
+            options=names_list,
+            index=None,
+            placeholder="نام را اینجا تایپ کنید...",
+            help="اگر نام در لیست باشد نشان داده می‌شود. اگر نام جدید است، آن را کامل تایپ کنید."
+        )
+        
+        # If the user typed something not in the list, we need to capture it
+        # Note: Streamlit selectbox doesn't easily allow "new" entries via UI alone.
+        # We'll use a text input below it ONLY for brand new names if they don't find it.
+        st.write("💡 اگر نام در لیست بالا نیست، در کادر زیر بنویسید:")
+        v_new_name = st.text_input("نام جدید (فقط اگر در لیست بالا نبود)")
+        
+        # Final name logic:
+        final_name = v_name if v_name else v_new_name
+
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
-        v_name = search_query
+        final_name = search_query
 
     # --- Section 1: Personal Info ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -86,16 +103,13 @@ with st.form("main_form"):
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
     v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
-    
-    # FIXED LINE: 
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
 
-    submit_label = "💾 ذخیره اطلاعات" 
-    submit = st.form_submit_button(submit_label)
+    submit = st.form_submit_button("💾 ذخیره اطلاعات")
 
     if submit:
         updated_dict = {
-            "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+            "اسم": final_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
             "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
             "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
             "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
@@ -103,17 +117,18 @@ with st.form("main_form"):
             "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
         }
         
-        if not v_name or v_name.strip() == "":
+        if not final_name or final_name.strip() == "":
             st.error("⚠️ وارد کردن 'اسم' الزامی است.")
         else:
             if search_query == "+ افزودن مورد جدید":
-                if v_name in names_list:
-                    st.error(f"خطا: '{v_name}' قبلاً ثبت شده است.")
+                # Final check for duplicates
+                if v_new_name in names_list:
+                    st.error(f"خطا: '{v_new_name}' قبلاً ثبت شده است.")
                 else:
                     new_row = pd.DataFrame([updated_dict])
                     df = pd.concat([df, new_row], ignore_index=True)
                     conn.update(data=df)
-                    st.success("با موفقیت ثبت شد.")
+                    st.success("ثبت شد.")
                     st.rerun()
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
