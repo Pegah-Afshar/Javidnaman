@@ -10,7 +10,7 @@ st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
-    .stButton button { width: 100%; background-color: #4CAF50; color: white; height: 3em; }
+    .stButton button { width: 100%; background-color: #4CAF50; color: white; height: 3em; font-weight: bold; }
     input { direction: rtl; text-align: right; }
     div[data-baseweb="select"] { direction: rtl; }
     </style>
@@ -22,39 +22,35 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 except Exception as e:
-    st.error("خطا در اتصال به گوگل‌شیت. لطفا تنظیمات Secrets را چک کنید.")
+    st.error("❌ اتصال به گوگل‌شیت برقرار نشد. لطفا Secrets را در داشبورد استریم‌لیت چک کنید.")
     st.stop()
 
-# 4. Data Prep
-if df is not None:
-    names_list = df['اسم'].dropna().unique().tolist()
-else:
-    names_list = []
+names_list = df['اسم'].dropna().unique().tolist() if df is not None else []
 
 st.title("📋 سامانه مدیریت اطلاعات")
 
-# 5. THE COMBOBOX LOGIC
-# This is the single box you asked for.
+# 4. THE SINGLE BOX COMBOBOX
+# In Streamlit 1.35+, selectbox with index=None and placeholder 
+# allows you to type new values and keep them.
 selected_name = st.selectbox(
-    "📍 نام و نام خانوادگی را انتخاب یا تایپ کنید:",
+    "📍 نام و نام خانوادگی را وارد یا انتخاب کنید:",
     options=names_list,
     index=None,
     placeholder="شروع به تایپ کنید...",
-    help="اگر نام در لیست نیست، آن را کامل تایپ کرده و Enter بزنید.",
-    no_options_label="نام جدید (برای تایید Enter بزنید)"
+    help="نام را انتخاب کنید یا اگر جدید است کامل تایپ کرده و Enter بزنید."
 )
 
-# Determine if we are Editing or Creating
+# Logic to detect Edit vs New
 is_edit = selected_name in names_list and selected_name is not None
 user_data = df[df['اسم'] == selected_name].iloc[0] if is_edit else {}
 
 if selected_name:
     if is_edit:
-        st.info(f"🔄 در حال ویرایش: {selected_name}")
+        st.info(f"🔄 در حال ویرایش اطلاعات موجود برای: {selected_name}")
     else:
-        st.success(f"✨ نام جدید شناسایی شد: {selected_name}")
+        st.success(f"✨ در حال ثبت نام جدید: {selected_name}")
 
-# 6. THE FORM
+# 5. THE FORM
 with st.form("main_form", clear_on_submit=True):
     
     # Section 1: Personal
@@ -68,7 +64,7 @@ with st.form("main_form", clear_on_submit=True):
 
     st.divider()
     
-    # Section 2: Incident Details (The specific layout you requested)
+    # Section 2: Incident Details
     st.markdown("### 🔍 جزئیات واقعه")
     
     # Row: Province - City - District/Street
@@ -99,9 +95,9 @@ with st.form("main_form", clear_on_submit=True):
 
     if submit:
         if not selected_name:
-            st.error("⚠️ ابتدا نام را وارد کنید.")
+            st.error("⚠️ نام را وارد نکردید!")
         else:
-            new_entry = {
+            updated_row = {
                 "اسم": selected_name, "استان": v_prov, "شهر": v_city, "محله/خیابان": v_dist, 
                 "تاریخ شمسی": v_shamsi, "تاریخ میلادی": v_en, "محل دقیق کشته شدن": v_loc,
                 "طریقه‌ی کشته شدن": v_method, "آرامگاه": v_grave, "سن": v_age, "جنسیت": v_gender, 
@@ -110,17 +106,17 @@ with st.form("main_form", clear_on_submit=True):
             }
             
             try:
-                # Refresh data to avoid overwriting others
+                # Re-read to get most recent data
                 fresh_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
                 
                 if is_edit:
-                    fresh_df.loc[fresh_df['اسم'] == selected_name, list(new_entry.keys())] = list(new_entry.values())
+                    fresh_df.loc[fresh_df['اسم'] == selected_name, list(updated_row.keys())] = list(updated_row.values())
                 else:
-                    new_row = pd.DataFrame([new_entry])
-                    fresh_df = pd.concat([fresh_df, new_row], ignore_index=True)
+                    new_df = pd.DataFrame([updated_row])
+                    fresh_df = pd.concat([fresh_df, new_df], ignore_index=True)
                 
                 conn.update(spreadsheet=spreadsheet_url, data=fresh_df)
-                st.success("✅ با موفقیت ذخیره شد!")
+                st.success("✅ اطلاعات با موفقیت ثبت شد.")
                 st.rerun()
             except Exception as e:
-                st.error(f"خطا در ذخیره: {e}")
+                st.error(f"❌ خطا در عملیات ذخیره: {e}")
