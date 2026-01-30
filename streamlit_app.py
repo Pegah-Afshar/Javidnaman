@@ -12,7 +12,7 @@ st.markdown("""
     label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
     div[data-baseweb="popover"] { direction: rtl; text-align: right; }
-    input { text-align: right; }
+    input { text-align: right; direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -27,43 +27,34 @@ except Exception as e:
     st.error("خطا در اتصال به گوگل‌شیت.")
     st.stop()
 
-# 4. Global Data Preparation
+# 4. Data Prep
 names_list = df['اسم'].dropna().unique().tolist()
 
-# Top Navigation: Choose between Edit or Add
-c_top1, c_top2 = st.columns([3, 1])
-with c_top1:
-    search_query = st.selectbox(
-        "🔍 جستجوی کلی (برای ویرایش انتخاب کنید):", 
-        ["+ افزودن مورد جدید"] + names_list
-    )
-with c_top2:
-    st.metric("تعداد کل افراد", len(df))
+# Top Search for Edit Mode
+search_query = st.selectbox(
+    "🔍 جستجوی لیست (برای ویرایش انتخاب کنید، برای ثبت جدید روی گزینه اول بمانید):", 
+    ["+ افزودن مورد جدید"] + names_list
+)
 
 # 5. The Main Form
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
-        
-        # --- FIX: Searchable Dropdown for Name Entry ---
-        # This box allows you to TYPE. As you type 'Ahmad', it shows all existing 'Ahmads'.
+        # This is the "Combobox" behavior. You type, it filters. 
+        # If you finish typing a new name, we capture it.
         v_name = st.selectbox(
-            "اسم (تایپ کنید تا اسامی مشابه را ببینید):",
+            "اسم (تایپ کنید... اگر در لیست باشد نمایش داده می‌شود):",
             options=names_list,
             index=None,
-            placeholder="نام را اینجا تایپ کنید...",
-            help="اگر نام در لیست باشد نشان داده می‌شود. اگر نام جدید است، آن را کامل تایپ کنید."
+            placeholder="نام را تایپ کنید...",
+            key="new_name_selector"
         )
         
-        # If the user typed something not in the list, we need to capture it
-        # Note: Streamlit selectbox doesn't easily allow "new" entries via UI alone.
-        # We'll use a text input below it ONLY for brand new names if they don't find it.
-        st.write("💡 اگر نام در لیست بالا نیست، در کادر زیر بنویسید:")
-        v_new_name = st.text_input("نام جدید (فقط اگر در لیست بالا نبود)")
+        # This hidden-ish text input catches the name if you're typing something BRAND NEW
+        v_manual_name = st.text_input("اگر نام جدید است، دوباره اینجا تایید کنید:")
         
-        # Final name logic:
-        final_name = v_name if v_name else v_new_name
-
+        # Decide which name to use
+        final_name = v_name if v_name else v_manual_name
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
@@ -105,33 +96,28 @@ with st.form("main_form"):
     v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
 
-    submit = st.form_submit_button("💾 ذخیره اطلاعات")
+    submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        updated_dict = {
-            "اسم": final_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
-            "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
-            "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
-            "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
-            "آرامگاه": v_grave, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
-            "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
-        }
-        
         if not final_name or final_name.strip() == "":
-            st.error("⚠️ وارد کردن 'اسم' الزامی است.")
+            st.error("⚠️ نام نمی‌تواند خالی باشد.")
         else:
+            updated_dict = {
+                "اسم": final_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+                "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
+                "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
+                "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
+                "آرامگاه": v_grave, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
+                "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
+            }
+            
             if search_query == "+ افزودن مورد جدید":
-                # Final check for duplicates
-                if v_new_name in names_list:
-                    st.error(f"خطا: '{v_new_name}' قبلاً ثبت شده است.")
-                else:
-                    new_row = pd.DataFrame([updated_dict])
-                    df = pd.concat([df, new_row], ignore_index=True)
-                    conn.update(data=df)
-                    st.success("ثبت شد.")
-                    st.rerun()
+                new_row = pd.DataFrame([updated_dict])
+                df = pd.concat([df, new_row], ignore_index=True)
+                conn.update(data=df)
+                st.success(f"'{final_name}' ثبت شد.")
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                 conn.update(data=df)
                 st.success("بروزرسانی شد.")
-                st.rerun()
+            st.rerun()
