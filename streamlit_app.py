@@ -13,7 +13,6 @@ st.markdown("""
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
     div[data-testid="stExpander"] { text-align: right; direction: rtl; }
     .stMetric { text-align: right; }
-    /* Makes the dropdown list align right */
     div[data-baseweb="popover"] { direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
@@ -35,25 +34,24 @@ names_list = df['اسم'].dropna().unique().tolist()
 c_top1, c_top2 = st.columns([3, 1])
 with c_top1:
     search_query = st.selectbox(
-        "🔍 جستجو یا انتخاب فرد (برای ویرایش انتخاب کنید، برای ثبت جدید روی گزینه اول بمانید):", 
+        "🔍 جستجو یا انتخاب فرد:", 
         ["+ افزودن مورد جدید"] + names_list
     )
 with c_top2:
     st.metric("تعداد کل افراد", len(df))
 
 # 5. The Main Form
+# All inputs and the SUBMIT BUTTON must be indented under this "with" block
 with st.form("main_form"):
-    if search_query == "+ افزودن مورد جديد":
+    if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
-        # SMART SUGGESTION: This is where you type. It will show existing names as you type.
-        v_name = st.text_input("اسم (اگر اسم را تایپ کنید و در لیست باشد، پایین هشدار می‌دهد)")
+        v_name = st.text_input("اسم")
         if v_name in names_list:
-            st.warning(f"⚠️ توجه: نام '{v_name}' در حال حاضر در لیست وجود دارد. اگر قصد ویرایش دارید، از منوی بالای صفحه آن را انتخاب کنید.")
+            st.warning(f"⚠️ توجه: نام '{v_name}' در حال حاضر در لیست وجود دارد.")
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
         v_name = search_query
-        st.info("در حال ویرایش اطلاعات موجود.")
 
     # --- Section 1: Personal Info ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -89,35 +87,4 @@ with st.form("main_form"):
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
     v_date_en = st.text_input("تاریخ میلادی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("تاریخ میلادی", "")))
-    v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
-
-    submit_label = "💾 ذخیره اطلاعات جدید" if search_query == "+ افزودن مورد جدید" else "✅ بروزرسانی تغییرات"
-    submit = st.form_submit_button(submit_label)
-
-    if submit:
-        updated_dict = {
-            "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
-            "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
-            "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
-            "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
-            "آرامگاه": v_grave, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
-            "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
-        }
-        
-        if not v_name or v_name.strip() == "":
-            st.error("⚠️ خطای نام: وارد کردن 'اسم' الزامی است.")
-        else:
-            if search_query == "+ افزودن مورد جدید":
-                if v_name in names_list:
-                    st.error(f"خطا: '{v_name}' قبلاً ثبت شده است.")
-                else:
-                    new_row = pd.DataFrame([updated_dict])
-                    df = pd.concat([df, new_row], ignore_index=True)
-                    conn.update(data=df)
-                    st.success("ثبت شد.")
-                    st.rerun()
-            else:
-                df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
-                conn.update(data=df)
-                st.success("بروزرسانی شد.")
-                st.rerun()
+    v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user
