@@ -2,10 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# 1. Page Configuration
+# 1. Page Config
 st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# 2. RTL & Persian Styling
+# 2. RTL Styling
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
@@ -16,44 +16,43 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Connection to Google Sheets
+# 3. Connection
 try:
     spreadsheet_url = st.secrets["public_gsheets_url"]
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 except Exception as e:
-    st.error("❌ اتصال به گوگل‌شیت برقرار نشد. لطفا Secrets را در داشبورد استریم‌لیت چک کنید.")
+    st.error("❌ خطا در اتصال به گوگل‌شیت. لطفا فایل Secrets را چک کنید.")
     st.stop()
 
+# 4. Prepare Names
 names_list = df['اسم'].dropna().unique().tolist() if df is not None else []
 
 st.title("📋 سامانه مدیریت اطلاعات")
 
-# 4. THE SINGLE BOX COMBOBOX
-# In Streamlit 1.35+, selectbox with index=None and placeholder 
-# allows you to type new values and keep them.
+# 5. THE SINGLE BOX (Combobox Logic)
+# We use st.selectbox. If you type a name not in the list, 
+# Streamlit 1.30+ handles it gracefully.
 selected_name = st.selectbox(
     "📍 نام و نام خانوادگی را وارد یا انتخاب کنید:",
     options=names_list,
     index=None,
     placeholder="شروع به تایپ کنید...",
-    help="نام را انتخاب کنید یا اگر جدید است کامل تایپ کرده و Enter بزنید."
 )
 
-# Logic to detect Edit vs New
+# Detect if we are Editing or Creating
 is_edit = selected_name in names_list and selected_name is not None
 user_data = df[df['اسم'] == selected_name].iloc[0] if is_edit else {}
 
 if selected_name:
     if is_edit:
-        st.info(f"🔄 در حال ویرایش اطلاعات موجود برای: {selected_name}")
+        st.info(f"🔄 در حال ویرایش: {selected_name}")
     else:
         st.success(f"✨ در حال ثبت نام جدید: {selected_name}")
 
-# 5. THE FORM
+# 6. THE FORM
 with st.form("main_form", clear_on_submit=True):
     
-    # Section 1: Personal
     st.markdown("### 👤 اطلاعات شخصی")
     c1, c2, c3 = st.columns(3)
     with c1: v_bday = st.text_input("تاریخ تولد", value=str(user_data.get("تاریخ تولد", "")) if is_edit else "")
@@ -64,16 +63,15 @@ with st.form("main_form", clear_on_submit=True):
 
     st.divider()
     
-    # Section 2: Incident Details
     st.markdown("### 🔍 جزئیات واقعه")
     
-    # Row: Province - City - District/Street
+    # Grid: Province - City - District/Street
     det_col1, det_col2, det_col3 = st.columns(3)
     with det_col1: v_prov = st.text_input("استان", value=str(user_data.get("استان", "")) if is_edit else "")
     with det_col2: v_city = st.text_input("شهر", value=str(user_data.get("شهر", "")) if is_edit else "")
     with det_col3: v_dist = st.text_input("محله/خیابان", value=str(user_data.get("محله/خیابان", "")) if is_edit else "")
     
-    # Row: Shamsi Date - English Date
+    # Row: Dates
     date_col1, date_col2 = st.columns(2)
     with date_col1: v_shamsi = st.text_input("تاریخ شمسی", value=str(user_data.get("تاریخ شمسی", "")) if is_edit else "")
     with date_col2: v_en = st.text_input("تاریخ میلادی", value=str(user_data.get("تاریخ میلادی", "")) if is_edit else "")
@@ -84,18 +82,16 @@ with st.form("main_form", clear_on_submit=True):
 
     st.divider()
     
-    # Section 3: Additional
     st.markdown("### 🌐 اطلاعات تکمیلی")
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value=str(user_data.get("اکانت در شبکه‌های اجتماعی", "")) if is_edit else "")
     v_rel = st.text_input("بستگان در شبکه‌های اجتماعی", value=str(user_data.get("بستگان در شبکه‌های اجتماعی", "")) if is_edit else "")
     v_notes = st.text_area("توضیحات", value=str(user_data.get("توضیحات", "")) if is_edit else "")
 
-    # Submit Button
-    submit = st.form_submit_button("💾 ذخیره نهایی اطلاعات")
+    submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
         if not selected_name:
-            st.error("⚠️ نام را وارد نکردید!")
+            st.error("⚠️ نام وارد نشده است!")
         else:
             updated_row = {
                 "اسم": selected_name, "استان": v_prov, "شهر": v_city, "محله/خیابان": v_dist, 
@@ -106,7 +102,7 @@ with st.form("main_form", clear_on_submit=True):
             }
             
             try:
-                # Re-read to get most recent data
+                # Refresh data
                 fresh_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
                 
                 if is_edit:
@@ -116,7 +112,7 @@ with st.form("main_form", clear_on_submit=True):
                     fresh_df = pd.concat([fresh_df, new_df], ignore_index=True)
                 
                 conn.update(spreadsheet=spreadsheet_url, data=fresh_df)
-                st.success("✅ اطلاعات با موفقیت ثبت شد.")
+                st.success("✅ ذخیره شد!")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ خطا در عملیات ذخیره: {e}")
+                st.error(f"❌ خطا: {e}")
