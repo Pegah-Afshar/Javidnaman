@@ -28,15 +28,13 @@ try:
     client = get_gsheet_client()
     sheet_url = st.secrets["public_gsheets_url"]
     sh = client.open_by_url(sheet_url)
-    worksheet = sh.get_worksheet(0) # کاربرگ اول
-    
-    # خواندن داده‌ها برای لیست پیشنهادی
+    worksheet = sh.get_worksheet(0)
     data = worksheet.get_all_records()
     df = pd.DataFrame(data)
     names_list = df['اسم'].dropna().unique().tolist() if not df.empty else []
 except Exception as e:
-    st.error(f"❌ خطا در اتصال: {e}")
-    st.info("نکته: مطمئن شوید ایمیل ربات را در شیت Editor کرده‌اید.")
+    # این خط به ما می‌گوید مشکل دقیقاً کجاست (مثلاً Permission Denied یا Spreadsheet Not Found)
+    st.error(f"جزئیات خطا: {str(e)}")
     st.stop()
 
 st.title("📋 سامانه ثبت و ویرایش")
