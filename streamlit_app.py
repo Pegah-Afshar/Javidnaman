@@ -2,64 +2,64 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-st.set_page_config(page_title="Friends Database", layout="centered")
-st.title("👯 Friends Info Portal")
+st.set_page_config(page_title="ثبت اطلاعات", layout="wide")
+st.title("📋 فرم ثبت و ویرایش اطلاعات")
 
-# 1. Connect to Google Sheets
-# This uses the secrets you just saved
+# Connect to Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
+df = conn.read(ttl=0)
 
-# 2. Read the current data
-# We clear the cache so we always see the newest info
-df = conn.read(ttl=0) 
+# Define all your columns exactly as they are in the sheet
+cols = [
+    "اسم", "شهر", "محله", "خیابان", "استان", "تاریخ", "تاریخ میلادی", 
+    "سن", "جنسیت", "توضیحات", "محل دقیق کشته شدن", "طریقه‌ی کشته شدن", 
+    "آرامگاه", "محل تولد", "تاریخ تولد", "اکانت در شبکه‌های اجتماعی", 
+    "بستگان در شبکه‌های اجتماعی"
+]
 
-# 3. Search / Autocomplete Feature
-names_list = df['Name'].dropna().unique().tolist()
-search_query = st.selectbox("Type a name to search or Edit:", ["+ Add New Person"] + names_list)
+# Search / Autocomplete by 'اسم'
+names_list = df['اسم'].dropna().unique().tolist()
+search_query = st.selectbox("جستجوی نام یا انتخاب جدید:", ["+ افزودن مورد جدید"] + names_list)
 
-# --- OPTION: ADD NEW PERSON ---
-if search_query == "+ Add New Person":
-    st.subheader("📝 Add a New Friend")
+if search_query == "+ افزودن مورد جدید":
+    st.subheader("📝 ورود اطلاعات جدید")
     with st.form("add_form", clear_on_submit=True):
-        name = st.text_input("Full Name")
-        phone = st.text_input("Phone Number")
-        city = st.text_input("City")
-        notes = st.text_area("Notes")
+        inputs = {}
+        # Create input boxes for every column
+        for col in cols:
+            inputs[col] = st.text_input(col)
         
-        submit = st.form_submit_button("Save to List")
+        submit = st.form_submit_button("ذخیره اطلاعات جدید")
         
         if submit:
-            if name in names_list:
-                st.error(f"Error: '{name}' is already in the list! Use the search bar above to edit them.")
-            elif name == "":
-                st.warning("Please enter a name.")
+            if inputs["اسم"] == "":
+                st.error("وارد کردن 'اسم' الزامی است.")
+            elif inputs["اسم"] in names_list:
+                st.error("این اسم قبلاً ثبت شده است. لطفاً از بخش ویرایش استفاده کنید.")
             else:
-                # Create a new row
-                new_data = pd.DataFrame([{"Name": name, "Phone": phone, "City": city, "Notes": notes}])
-                # Add to existing data
-                updated_df = pd.concat([df, new_data], ignore_index=True)
-                # Update the Google Sheet
+                new_row = pd.DataFrame([inputs])
+                updated_df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(data=updated_df)
-                st.success(f"Successfully added {name}!")
-                st.balloons()
+                st.success(f"اطلاعات {inputs['اسم']} با موفقیت ذخیره شد.")
 
-# --- OPTION: EDIT EXISTING PERSON ---
 else:
-    st.subheader(f"Update Info for: {search_query}")
-    # Pull the current data for this specific person
-    user_row = df[df['Name'] == search_query].iloc[0]
+    st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
+    user_data = df[df['اسم'] == search_query].iloc[0]
     
     with st.form("edit_form"):
-        # We fill the boxes with the OLD info so they can just change what they need
-        new_phone = st.text_input("Phone Number", value=str(user_row['Phone']))
-        new_city = st.text_input("City", value=str(user_row['City']))
-        new_notes = st.text_area("Notes", value=str(user_row['Notes']))
+        updated_inputs = {}
+        for col in cols:
+            # We skip 'اسم' so they don't accidentally change the primary name
+            if col == "اسم":
+                updated_inputs[col] = search_query
+                st.write(f"**نام:** {search_query}")
+            else:
+                updated_inputs[col] = st.text_input(col, value=str(user_data[col]))
         
-        update_button = st.form_submit_button("Save Changes")
+        update_btn = st.form_submit_button("بروزرسانی تغییرات")
         
-        if update_button:
-            # Find where this person is in the list and update them
-            df.loc[df['Name'] == search_query, ['Phone', 'City', 'Notes']] = [new_phone, new_city, new_notes]
-            # Update the Google Sheet
+        if update_btn:
+            # Update the row in the dataframe
+            df.loc[df['اسم'] == search_query, cols] = [updated_inputs[c] for c in cols]
             conn.update(data=df)
-            st.success("Information updated successfully!")
+            st.success("تغییرات با موفقیت در گوگل شیت اعمال شد.")
