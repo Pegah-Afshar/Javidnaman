@@ -5,6 +5,37 @@ import pandas as pd
 st.set_page_config(page_title="ثبت اطلاعات", layout="wide")
 st.title("📋 فرم ثبت و ویرایش اطلاعات")
 
+# --- RTL Styling for Farsi ---
+st.markdown(
+    """
+    <style>
+    /* Change the alignment of the main app container */
+    .main .block-container {
+        direction: RTL;
+        text-align: right;
+    }
+    /* Align all input labels, text inputs, and text areas to the right */
+    div[data-baseweb="input"], div[data-baseweb="select"], div[data-baseweb="textarea"] {
+        direction: RTL;
+        text-align: right;
+    }
+    /* Fix the alignment of selectbox text */
+    div[data-testid="stSelectbox"] {
+        direction: RTL;
+    }
+    /* Ensure form buttons and labels are right-aligned */
+    .stButton>button {
+        float: right;
+    }
+    label {
+        width: 100%;
+        text-align: right !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
