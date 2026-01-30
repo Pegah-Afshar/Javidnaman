@@ -1,126 +1,72 @@
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-
-# ─── صفحه و استایل ───
-st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
-
+st.set_page_config(
+    page_title="ثبت و ویرایش اطلاعات",
+    layout="wide"
+)
 st.markdown("""
-    <style>
-    [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
-    label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
-    .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    input { direction: rtl; text-align: right; }
-    div[data-baseweb="select"] { direction: rtl; }
-    </style>
-    """, unsafe_allow_html=True)
-
+<style>
+[data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
+input, textarea { direction: rtl; text-align: right; }
+div[data-baseweb="select"] { direction: rtl; }
+.stButton button {
+    display: block;
+    margin-left: auto;
+    background-color: #4CAF50;
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
 st.title("📋 پنل جامع ثبت و ویرایش اطلاعات")
 
-# ─── اتصال به گوگل‌شیت ───
 try:
     spreadsheet_url = st.secrets["public_gsheets_url"]
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 except Exception as e:
-    st.error(f"خطا در اتصال: {e}")
+    st.error(f"خطا در اتصال به گوگل‌شیت: {e}")
     st.stop()
-
 if "اسم" not in df.columns:
-    st.error("ستون 'اسم' در صفحه‌گسترده یافت نشد.")
+    st.error("ستون «اسم» در شیت وجود ندارد.")
     st.stop()
-
-names_list = df["اسم"].dropna().astype(str).unique().tolist()
-
-NEW_PERSON_LABEL = "— نام جدید؛ در لیست نیست —"
-
-# ─── Session state ───
-if "name" not in st.session_state:
-    st.session_state.name = ""
-if "name_input" not in st.session_state:
-    st.session_state.name_input = ""
+names_list = (
+    df["اسم"]
+    .dropna()
+    .astype(str)
+    .unique()
+    .tolist()
+)
 if "editing_name" not in st.session_state:
     st.session_state.editing_name = None
+
 if "prefill" not in st.session_state:
     st.session_state.prefill = None
-if "_df" not in st.session_state:
-    st.session_state._df = df
-
-def on_dropdown_pick():
-    """وقتی کاربر از dropdown یک نام موجود را انتخاب کند، داده را بارگذاری کن."""
-    chosen = st.session_state.get("name_picker")
-    if not chosen or chosen == NEW_PERSON_LABEL:
-        st.session_state.editing_name = None
-        st.session_state.prefill = None
-        return
-    d = st.session_state._df
-    row = d[d["اسم"].astype(str) == chosen]
-    if not row.empty:
-        st.session_state.editing_name = chosen
-        st.session_state.name = chosen
-        st.session_state["name_input"] = chosen
-        st.session_state.prefill = row.iloc[0].to_dict()
-
-# ─── ۱. نام (الزامی) — فقط یک باکس ───
-st.markdown("### ۱. نام (الزامی)")
-st.caption("نام را اینجا تایپ کنید. زیر باکس، لیست اسامی موجودی که با تایپ شما تطابق دارند ظاهر می‌شود (یک بار بیرون از باکس کلیک کنید یا Tab بزنید تا به‌روز شود).")
-
-st.text_input(
+st.markdown("### ۱. نام")
+name = st.combobox(
     "نام",
-    key="name_input",
-    placeholder="نام را تایپ کنید...",
-    label_visibility="collapsed",
+    options=names_list,
+    placeholder="نام",
 )
-current_name = (st.session_state.get("name_input") or "").strip()
-st.session_state.name = current_name
-
-# ─── ۲. لیست زندهٔ اسامی مشابه (زیر باکس نام) ───
-st.session_state._df = df
-matches = [n for n in names_list if current_name and current_name.lower() in n.lower()]
-pick_options = [NEW_PERSON_LABEL] + matches
-
-if "name_picker" in st.session_state and st.session_state["name_picker"] not in pick_options:
-    st.session_state["name_picker"] = NEW_PERSON_LABEL
-
-if current_name:
-    st.caption("**اسامی موجود در لیست:** اگر این شخص در لیست است یکی انتخاب کنید (حالت ویرایش). اگر نام جدید است چیزی انتخاب نکنید و همان نام بالا را نگه دارید.")
-    if matches:
-        st.markdown(f"↓ **{len(matches)} نام مشابه** — برای ویرایش یکی را انتخاب کنید:")
-    else:
-        st.markdown("↓ **هیچ نام مشابهی در لیست نیست** — همین نام به‌عنوان مورد جدید ذخیره می‌شود.")
-    chosen = st.selectbox(
-        "اسامی مشابه",
-        options=pick_options,
-        index=pick_options.index(st.session_state.get("name_picker", NEW_PERSON_LABEL)) if st.session_state.get("name_picker", NEW_PERSON_LABEL) in pick_options else 0,
-        key="name_picker",
-        label_visibility="collapsed",
-        on_change=on_dropdown_pick,
-    )
-    if chosen == NEW_PERSON_LABEL and st.session_state.editing_name is not None:
-        st.session_state.editing_name = None
-        st.session_state.prefill = None
+if not name:
+    st.stop()
+if name in names_list:
+    st.session_state.editing_name = name
+    row = df[df["اسم"].astype(str) == name].iloc[0]
+    st.session_state.prefill = row.to_dict()
 else:
-    if st.session_state.editing_name is not None:
-        st.session_state.editing_name = None
-        st.session_state.prefill = None
-    st.session_state["name_picker"] = NEW_PERSON_LABEL
-
-editing_name = st.session_state.editing_name
-prefill = st.session_state.prefill
-
-def get_val(key, default=""):
-    if prefill is None:
-        return default
-    v = prefill.get(key, default)
-    return "" if pd.isna(v) else str(v)
-
-# ─── ۳. سایر فیلدها (همه اختیاری) و ذخیره ───
-st.divider()
-if editing_name:
-    st.info(f"**حالت ویرایش:** در حال ویرایش **{editing_name}**. فیلدها را تغییر دهید و ذخیره نهایی را بزنید.")
-
+    st.session_state.editing_name = None
+    st.session_state.prefill = None
+if st.session_state.editing_name:
+    st.info(f" ویرایش اطلاعات: **{name}**")
+def get_val(key):
+    if not st.session_state.prefill:
+        return ""
+    val = st.session_state.prefill.get(key, "")
+    return "" if pd.isna(val) else str(val)
 with st.form("main_form"):
-    st.markdown("### 👤 اطلاعات شخصی (همه اختیاری)")
+    st.markdown("### 👤 اطلاعات شخصی)")
+
     col1, col2, col3 = st.columns(3)
     with col1:
         v_bday = st.text_input("تاریخ تولد", value=get_val("تاریخ تولد"))
@@ -128,100 +74,89 @@ with st.form("main_form"):
         v_age = st.text_input("سن", value=get_val("سن"))
     with col3:
         v_gender = st.text_input("جنسیت", value=get_val("جنسیت"))
+
     v_birth_place = st.text_input("محل تولد", value=get_val("محل تولد"))
 
     st.divider()
-    st.markdown("### 🔍 جزئیات واقعه (همه اختیاری)")
+    st.markdown("### 🔍 جزئیات واقعه ")
+
     c1, c2, c3 = st.columns(3)
     with c1:
         v_province = st.text_input("استان", value=get_val("استان"))
     with c2:
         v_city = st.text_input("شهر", value=get_val("شهر"))
     with c3:
-        v_district_street = st.text_input("محله/خیابان", value=get_val("محله/خیابان"))
+        v_street = st.text_input("محله/خیابان", value=get_val("محله/خیابان"))
+
     d1, d2 = st.columns(2)
     with d1:
         v_date_shamsi = st.text_input("تاریخ شمسی", value=get_val("تاریخ شمسی"))
     with d2:
         v_date_en = st.text_input("تاریخ میلادی", value=get_val("تاریخ میلادی"))
+
     v_exact_loc = st.text_input("محل دقیق کشته شدن", value=get_val("محل دقیق کشته شدن"))
     v_method = st.text_input("طریقه‌ی کشته شدن", value=get_val("طریقه‌ی کشته شدن"))
     v_grave = st.text_input("آرامگاه", value=get_val("آرامگاه"))
 
     st.divider()
-    st.markdown("### اطلاعات تکمیلی (همه اختیاری)")
-    v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value=get_val("اکانت در شبکه‌های اجتماعی"))
-    v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value=get_val("بستگان در شبکه‌های اجتماعی"))
+    st.markdown("### اطلاعات تکمیلی ")
+
+    v_social = st.text_input(
+        "اکانت در شبکه‌های اجتماعی",
+        value=get_val("اکانت در شبکه‌های اجتماعی")
+    )
+    v_relatives = st.text_input(
+        "بستگان در شبکه‌های اجتماعی",
+        value=get_val("بستگان در شبکه‌های اجتماعی")
+    )
     v_notes = st.text_area("توضیحات", value=get_val("توضیحات"))
 
     submitted = st.form_submit_button("💾 ذخیره نهایی")
 
-    if submitted:
-        final_name = st.session_state.name
-        if not final_name:
-            st.error("⚠️ وارد کردن نام الزامی است.")
-        else:
-            data_to_save = {
-                "اسم": final_name,
-                "استان": v_province,
-                "شهر": v_city,
-                "محله/خیابان": v_district_street,
-                "تاریخ شمسی": v_date_shamsi,
-                "تاریخ میلادی": v_date_en,
-                "محل دقیق کشته شدن": v_exact_loc,
-                "طریقه‌ی کشته شدن": v_method,
-                "آرامگاه": v_grave,
-                "سن": v_age,
-                "جنسیت": v_gender,
-                "توضیحات": v_notes,
-                "محل تولد": v_birth_place,
-                "تاریخ تولد": v_bday,
-                "اکانت در شبکه‌های اجتماعی": v_social,
-                "بستگان در شبکه‌های اجتماعی": v_relatives,
-            }
-            try:
-                if editing_name:
-                    current_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
-                    mask = current_df["اسم"].astype(str) == editing_name
-                    if mask.any():
-                        for key, val in data_to_save.items():
-                            if key in current_df.columns:
-                                current_df.loc[mask, key] = val
-                        conn.update(spreadsheet=spreadsheet_url, data=current_df)
-                        st.success("اطلاعات با موفقیت به‌روزرسانی شد.")
-                    else:
-                        st.error("ردیف برای ویرایش یافت نشد.")
-                else:
-                    current_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
-                    new_df = pd.concat([current_df, pd.DataFrame([data_to_save])], ignore_index=True)
-                    conn.update(spreadsheet=spreadsheet_url, data=new_df)
-                    st.success("اطلاعات با موفقیت ذخیره شد.")
-                # بعد از ذخیره: نام و حالت ویرایش پاک می‌شود تا بتوانید مورد جدید وارد کنید
-                st.session_state.editing_name = None
-                st.session_state.prefill = None
-                st.session_state.name = ""
-                st.session_state["name_input"] = ""
-                st.session_state["name_picker"] = NEW_PERSON_LABEL
-                if hasattr(st, "rerun"):
-                    st.rerun()
-                else:
-                    st.experimental_rerun()
-            except Exception as e:
-                err_msg = str(e)
-                if "cannot be written" in err_msg.lower() or "unsupported" in err_msg.lower():
-                    st.error("ذخیره فقط با اتصال سرویس‌اکانت ممکن است. شیت عمومی فقط خواندنی است.")
-                else:
-                    st.error(f"خطا در ذخیره‌سازی: {e}")
+if submitted:
+    data = {
+        "اسم": name,
+        "تاریخ تولد": v_bday,
+        "سن": v_age,
+        "جنسیت": v_gender,
+        "محل تولد": v_birth_place,
+        "استان": v_province,
+        "شهر": v_city,
+        "محله/خیابان": v_street,
+        "تاریخ شمسی": v_date_shamsi,
+        "تاریخ میلادی": v_date_en,
+        "محل دقیق کشته شدن": v_exact_loc,
+        "طریقه‌ی کشته شدن": v_method,
+        "آرامگاه": v_grave,
+        "اکانت در شبکه‌های اجتماعی": v_social,
+        "بستگان": v_relatives,
+        "توضیحات": v_notes,
+    }
 
-st.divider()
-st.caption("**شروع ورود جدید:** نام و حالت ویرایش را پاک می‌کند تا بتوانید از اول یک نفر جدید وارد کنید.")
-if st.button("🆕 شروع ورود جدید"):
-    st.session_state.name = ""
-    st.session_state["name_input"] = ""
-    st.session_state["name_picker"] = NEW_PERSON_LABEL
+    current_df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
+
+    if st.session_state.editing_name:
+        mask = current_df["اسم"].astype(str) == name
+        for k, v in data.items():
+            if k in current_df.columns:
+                current_df.loc[mask, k] = v
+        conn.update(spreadsheet=spreadsheet_url, data=current_df)
+        st.success("اطلاعات با موفقیت به‌روزرسانی شد.")
+    else:
+        current_df = pd.concat(
+            [current_df, pd.DataFrame([data])],
+            ignore_index=True
+        )
+        conn.update(spreadsheet=spreadsheet_url, data=current_df)
+        st.success("اطلاعات جدید ذخیره شد.")
+
     st.session_state.editing_name = None
     st.session_state.prefill = None
-    if hasattr(st, "rerun"):
-        st.rerun()
-    else:
-        st.experimental_rerun()
+    st.rerun()
+
+st.divider()
+
+if st.button("🆕 شروع ورود جدید"):
+    st.session_state.editing_name = None
+    st.session_state.prefill = None
+    st.rerun()
