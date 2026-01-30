@@ -5,14 +5,13 @@ import pandas as pd
 # 1. Page Configuration
 st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# 2. RTL Styling for Farsi
+# 2. RTL Styling and Datalist logic
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
-    label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
+    label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    /* Stylizing the selectbox to look like a search bar */
-    div[data-baseweb="select"] { direction: rtl; text-align: right; }
+    input { text-align: right; direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -41,16 +40,17 @@ with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
         
-        # ONE BOX: Searchable, Clearable (X), and supports custom typing
-        # If the name exists, you'll see it in the dropdown. 
-        # If it's new, the app will accept your manual input upon submission.
-        v_name = st.selectbox(
-            "اسم:",
-            options=names_list,
-            index=None,
-            placeholder="نام را تایپ کنید (اگر جدید است کامل بنویسید)...",
-            key="name_input_box"
-        )
+        # This creates the "Suggestions" list in the background
+        # It's like a ghost list that helps you while you type in the box below
+        st.markdown(f'<datalist id="names_datalist">{" ".join([f"<option value=\'{n}\'>" for n in names_list])}</datalist>', unsafe_allow_html=True)
+        
+        # This is the ONE BOX you wanted. 
+        # It doesn't disappear. It suggests names but lets you keep typing.
+        v_name = st.text_input("اسم (نام را تایپ کنید، پیشنهادات نمایش داده می‌شود):", key="name_input", help="اگر نام را تایپ کنید و در لیست باشد، زیر کادر ظاهر می‌شود.")
+        
+        # This connects the text_input to our datalist using HTML injection
+        st.markdown(f'<script>var input = window.parent.document.querySelectorAll("input[type=\'text\']")[1]; input.setAttribute("list", "names_datalist");</script>', unsafe_allow_html=True)
+
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
@@ -95,15 +95,11 @@ with st.form("main_form"):
     submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        # Check if user typed a name into the selectbox search field
-        # We access the widget state to see what was typed even if not 'selected'
-        typed_name = st.session_state.name_input_box if search_query == "+ افزودن مورد جدید" else search_query
-        
-        if not typed_name:
+        if not v_name or v_name.strip() == "":
             st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": typed_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+                "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
                 "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
                 "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
                 "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
@@ -115,9 +111,9 @@ with st.form("main_form"):
                 new_row = pd.DataFrame([updated_dict])
                 df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(data=df)
-                st.success(f"'{typed_name}' با موفقیت ثبت شد.")
+                st.success(f"'{v_name}' ثبت شد.")
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                 conn.update(data=df)
-                st.success("بروزرسانی انجام شد.")
+                st.success("بروزرسانی شد.")
             st.rerun()
