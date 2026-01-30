@@ -61,35 +61,33 @@ def on_dropdown_pick():
         st.session_state["name_input"] = chosen
         st.session_state.prefill = row.iloc[0].to_dict()
 
-# ─── فقط یک باکس برای نام ───
-st.markdown("### نام (الزامی)")
-st.caption("نام را تایپ کنید، سپس یک بار بیرون از باکس کلیک کنید یا Tab بزنید تا لیست اسامی مشابه ظاهر شود. اگر نام در لیست بود انتخاب کنید (ویرایش)، وگرنه ادامه تایپ و ذخیره.")
+# ─── ۱. نام (الزامی) — فقط یک باکس ───
+st.markdown("### ۱. نام (الزامی)")
+st.caption("نام را اینجا تایپ کنید. زیر باکس، لیست اسامی موجودی که با تایپ شما تطابق دارند ظاهر می‌شود (یک بار بیرون از باکس کلیک کنید یا Tab بزنید تا به‌روز شود).")
 
-# تنها باکس نام — فقط از key استفاده می‌کنیم تا مقدار همیشه از session بیاید
 st.text_input(
     "نام",
     key="name_input",
-    placeholder="نام را اینجا تایپ کنید... بعد Tab یا کلیک به باکس بعدی.",
-    label_visibility="visible",
+    placeholder="نام را تایپ کنید...",
+    label_visibility="collapsed",
 )
-# منبع واحد برای «متن تایپ‌شده» از باکس نام
 current_name = (st.session_state.get("name_input") or "").strip()
 st.session_state.name = current_name
 
-# dropdown اسامی مشابه — همیشه وقتی کاربر چیزی تایپ کرده نشان داده می‌شود
+# ─── ۲. لیست زندهٔ اسامی مشابه (زیر باکس نام) ───
 st.session_state._df = df
 matches = [n for n in names_list if current_name and current_name.lower() in n.lower()]
 pick_options = [NEW_PERSON_LABEL] + matches
 
-# اگر مقدار ذخیره‌شدهٔ dropdown در لیست فعلی نیست، به «نام جدید» برگردان
 if "name_picker" in st.session_state and st.session_state["name_picker"] not in pick_options:
     st.session_state["name_picker"] = NEW_PERSON_LABEL
 
 if current_name:
+    st.caption("**اسامی موجود در لیست:** اگر این شخص در لیست است یکی انتخاب کنید (حالت ویرایش). اگر نام جدید است چیزی انتخاب نکنید و همان نام بالا را نگه دارید.")
     if matches:
-        st.markdown(f"**اسامی مشابه ({len(matches)} مورد) — برای ویرایش یکی را انتخاب کنید:**")
+        st.markdown(f"↓ **{len(matches)} نام مشابه** — برای ویرایش یکی را انتخاب کنید:")
     else:
-        st.markdown("**هیچ نام مشابهی در لیست نیست؛ همین نام به‌عنوان مورد جدید ذخیره می‌شود.**")
+        st.markdown("↓ **هیچ نام مشابهی در لیست نیست** — همین نام به‌عنوان مورد جدید ذخیره می‌شود.")
     chosen = st.selectbox(
         "اسامی مشابه",
         options=pick_options,
@@ -116,13 +114,13 @@ def get_val(key, default=""):
     v = prefill.get(key, default)
     return "" if pd.isna(v) else str(v)
 
-# ─── فرم: بقیهٔ فیلدها (نام فقط در باکس بالا است) ───
+# ─── ۳. سایر فیلدها (همه اختیاری) و ذخیره ───
 st.divider()
 if editing_name:
-    st.info(f"در حال ویرایش: **{editing_name}**")
+    st.info(f"**حالت ویرایش:** در حال ویرایش **{editing_name}**. فیلدها را تغییر دهید و ذخیره نهایی را بزنید.")
 
 with st.form("main_form"):
-    st.markdown("### 👤 اطلاعات شخصی (اختیاری)")
+    st.markdown("### 👤 اطلاعات شخصی (همه اختیاری)")
     col1, col2, col3 = st.columns(3)
     with col1:
         v_bday = st.text_input("تاریخ تولد", value=get_val("تاریخ تولد"))
@@ -133,7 +131,7 @@ with st.form("main_form"):
     v_birth_place = st.text_input("محل تولد", value=get_val("محل تولد"))
 
     st.divider()
-    st.markdown("### 🔍 جزئیات واقعه (اختیاری)")
+    st.markdown("### 🔍 جزئیات واقعه (همه اختیاری)")
     c1, c2, c3 = st.columns(3)
     with c1:
         v_province = st.text_input("استان", value=get_val("استان"))
@@ -151,7 +149,7 @@ with st.form("main_form"):
     v_grave = st.text_input("آرامگاه", value=get_val("آرامگاه"))
 
     st.divider()
-    st.markdown("### اطلاعات تکمیلی (اختیاری)")
+    st.markdown("### اطلاعات تکمیلی (همه اختیاری)")
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value=get_val("اکانت در شبکه‌های اجتماعی"))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value=get_val("بستگان در شبکه‌های اجتماعی"))
     v_notes = st.text_area("توضیحات", value=get_val("توضیحات"))
@@ -198,11 +196,12 @@ with st.form("main_form"):
                     new_df = pd.concat([current_df, pd.DataFrame([data_to_save])], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, data=new_df)
                     st.success("اطلاعات با موفقیت ذخیره شد.")
+                # بعد از ذخیره: نام و حالت ویرایش پاک می‌شود تا بتوانید مورد جدید وارد کنید
                 st.session_state.editing_name = None
                 st.session_state.prefill = None
                 st.session_state.name = ""
-                if "name_input" in st.session_state:
-                    st.session_state.name_input = ""
+                st.session_state["name_input"] = ""
+                st.session_state["name_picker"] = NEW_PERSON_LABEL
                 if hasattr(st, "rerun"):
                     st.rerun()
                 else:
@@ -215,12 +214,13 @@ with st.form("main_form"):
                     st.error(f"خطا در ذخیره‌سازی: {e}")
 
 st.divider()
+st.caption("**شروع ورود جدید:** نام و حالت ویرایش را پاک می‌کند تا بتوانید از اول یک نفر جدید وارد کنید.")
 if st.button("🆕 شروع ورود جدید"):
     st.session_state.name = ""
+    st.session_state["name_input"] = ""
+    st.session_state["name_picker"] = NEW_PERSON_LABEL
     st.session_state.editing_name = None
     st.session_state.prefill = None
-    if "name_input" in st.session_state:
-        st.session_state.name_input = ""
     if hasattr(st, "rerun"):
         st.rerun()
     else:
