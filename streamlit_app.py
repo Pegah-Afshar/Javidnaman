@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from streamlit_searchbox import st_searchbox
 import time
 
-# 1. Setup
+# 1. Setup & RTL Config
 st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
 
 st.markdown("""<style>
@@ -14,7 +14,7 @@ st.markdown("""<style>
     .stButton button { width: 100%; background-color: #1a73e8; color: white; height: 3em; }
 </style>""", unsafe_allow_html=True)
 
-# 2. Connection & Data
+# 2. Connection with Cache
 @st.cache_resource
 def get_connection():
     scope = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -25,39 +25,36 @@ def get_connection():
 @st.cache_data(ttl=10)
 def get_data():
     client = get_connection()
-    # Ensure this index (0) matches your sheet tab
+    # Ensure we get all values, even empty strings to preserve structure
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
     return pd.DataFrame(sheet.get_all_records())
 
+# Load data and get Headers dynamically
 df = get_data()
-# Get unique names, ensure they are strings
-names_list = df['اسم'].dropna().astype(str).unique().tolist()
+all_headers = df.columns.tolist() # This grabs ["اسم", "سن", "شهر" ...] from your sheet
 
-# 3. FIXED SEARCH FUNCTION
-# This is the magic part. If the name is new, we add it to the list dynamically.
+# Clean up name list
+existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
+
+# 3. Search Function (Keeps your new names visible)
 def search_names(search_term: str):
-    # 1. Find matches in existing DB
-    matches = [n for n in names_list if search_term in n]
-    
-    # 2. If the user typed something that isn't in the list, 
-    # add it as the first option so they can "Select" their new name.
-    if search_term and search_term not in matches:
-        matches.insert(0, search_term)
-        
+    if not search_term:
+        return existing_names
+    matches = [n for n in existing_names if search_term in n]
+    if search_term not in matches:
+        matches.insert(0, search_term) # Add new name to top of list
     return matches
 
 st.title("📋 سامانه مدیریت هوشمند")
 
-# 4. INPUT LOGIC
-col_search, col_reset = st.columns([5, 1])
+# 4. Input Logic
+col_search, col_reset = st.columns([4, 1])
 
 with col_search:
-    # We use a key for session state to help it remember
     name_input = st_searchbox(
         search_names,
-        placeholder="نام را جستجو کنید یا نام جدید بنویسید (و اینتر بزنید)...",
-        key="name_search_box",
-        clear_on_submit=False, # Important: Don't clear when they hit enter
+        placeholder="نام را جستجو کنید یا نام جدید بنویسید...",
+        key="name_search",
     )
 
 with col_reset:
@@ -66,62 +63,74 @@ with col_reset:
     if st.button("❌ پاک کردن"):
         st.rerun()
 
-# Determine Edit vs New
+# 5. Logic: Check if Edit or New
 is_edit_mode = False
 current_data = {}
 
 if name_input:
-    # Check if the name actually exists in our original database
-    if name_input in names_list:
+    # IMPORTANT: User must select the name from dropdown for this to trigger
+    if name_input in existing_names:
         is_edit_mode = True
+        # Get the row matching the name
         current_data = df[df['اسم'] == name_input].iloc[0].to_dict()
-        st.info(f"✏️ در حال ویرایش: **{name_input}**")
+        st.success(f"✅ ویرایش اطلاعات: {name_input}")
     else:
-        is_edit_mode = False
-        st.success(f"➕ ثبت نام جدید: **{name_input}**")
+        st.info(f"🆕 ثبت فرد جدید: {name_input}")
 
-# 5. THE FORM
-# Only show form if a name is selected/typed
+# 6. DYNAMIC FORM GENERATION
+# This part automatically creates boxes for whatever columns are in your Google Sheet
 if name_input:
     with st.form("main_form"):
-        st.markdown("### 👤 اطلاعات")
+        st.markdown("### 📝 ورود اطلاعات")
         
-        # Use .get() to handle missing columns gracefully
-        c1, c2, c3 = st.columns(3)
-        with c1: v_bday = st.text_input("تاریخ تولد", value=str(current_data.get("تاریخ تولد", "")))
-        with c2: v_age = st.text_input("سن", value=str(current_data.get("سن", "")))
-        with c3: v_gender = st.text_input("جنسیت", value=str(current_data.get("جنسیت", "")))
+        # We create a dictionary to store the user's inputs
+        user_inputs = {}
         
+        # Create 3 visual columns for layout
+        cols = st.columns(3)
+        
+        # Loop through every header in your Google Sheet
+        # valid_headers skips 'اسم' because we already have that from the searchbox
+        valid_headers = [h for h in all_headers if h != 'اسم']
+        
+        for i, header in enumerate(valid_headers):
+            # Pick a column (0, 1, or 2)
+            with cols[i % 3]:
+                # If editing, grab the existing value. If new, use empty string.
+                val = current_data.get(header, "")
+                # Create the input box
+                user_inputs[header] = st.text_input(header, value=str(val))
+
         st.divider()
-        l1, l2, l3 = st.columns(3)
-        with l1: v_prov = st.text_input("استان", value=str(current_data.get("استان", "")))
-        with l2: v_city = st.text_input("شهر", value=str(current_data.get("شهر", "")))
-        with l3: v_dist = st.text_input("محله/خیابان", value=str(current_data.get("محله/خیابان", "")))
-
-        submitted = st.form_submit_button("💾 ذخیره")
-
+        submitted = st.form_submit_button("💾 ذخیره و ثبت")
+        
         if submitted:
             try:
-                # Re-connect inside the button for safety
                 client = get_connection()
                 sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 
-                row_data = [name_input, v_prov, v_city, v_dist, v_age, v_gender, v_bday]
+                # Build the row to save in the EXACT order of your Google Sheet columns
+                final_row = []
+                for header in all_headers:
+                    if header == 'اسم':
+                        final_row.append(name_input)
+                    else:
+                        final_row.append(user_inputs.get(header, ""))
                 
                 if is_edit_mode:
-                    # Find the row again to ensure we don't overwrite wrong line
                     cell = sheet.find(name_input)
-                    sheet.update(range_name=f"A{cell.row}:G{cell.row}", values=[row_data])
-                    st.toast(f"اطلاعات {name_input} بروز شد!", icon='✅')
+                    # Convert row number to range (e.g., A5:G5)
+                    # We calculate the end column letter based on length of headers
+                    sheet.update(range_name=f"A{cell.row}", values=[final_row])
+                    st.toast("✅ اطلاعات بروزرسانی شد", icon='🎉')
                 else:
-                    # Append new row
-                    sheet.append_row(row_data)
-                    st.toast(f"نام {name_input} اضافه شد!", icon='✨')
+                    sheet.append_row(final_row)
+                    st.toast("✅ فرد جدید اضافه شد", icon='✨')
                 
-                # Clear cache and wait a moment
+                # Refresh data
                 get_data.clear()
-                time.sleep(2) 
+                time.sleep(1)
                 st.rerun()
                 
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"خطا: {e}")
