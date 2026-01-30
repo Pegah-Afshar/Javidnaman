@@ -2,10 +2,10 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
-# ۱. تنظیمات صفحه
-st.set_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
+# ۱. تنظیمات صفحه (اصلاح شده)
+st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# ۲. استایل‌دهی راست‌چین و فیکس کردن مشکل باکس نام
+# ۲. استایل‌دهی راست‌چین
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
@@ -23,7 +23,7 @@ try:
     conn = st.connection("gsheets", type=GSheetsConnection)
     df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 except Exception as e:
-    st.error("خطا در اتصال به گوگل‌شیت.")
+    st.error(f"خطا در اتصال: {e}")
     st.stop()
 
 # ۴. آماده‌سازی لیست اسامی
@@ -40,15 +40,14 @@ with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
         
-        # ایجاد لیست پیشنهادات در پشت صحنه (Datalist)
-        # این کد باعث می‌شود وقتی در باکس متن تایپ می‌کنید، لیست اسامی مشابه زیر آن ظاهر شود
+        # ایجاد دیتالیست برای پیشنهادات نام
         options_html = "".join([f'<option value="{n}">' for n in names_list])
         st.markdown(f'<datalist id="names_list">{options_html}</datalist>', unsafe_allow_html=True)
         
-        # تنها باکس نام: این یک text_input است پس با کلیک روی باکس بعدی پاک نمی‌شود
-        v_name = st.text_input("اسم:", key="unique_name_input", placeholder="تایپ کنید (لیست پیشنهادات ظاهر می‌شود)...")
+        # باکس نام (text_input که پاک نمی‌شود)
+        v_name = st.text_input("اسم:", key="unique_name_input", placeholder="تایپ کنید...")
         
-        # تزریق جاوااسکریپت برای متصل کردن لیست پیشنهادات به باکس متن
+        # اتصال لیست پیشنهادات به این اینپوت
         st.markdown("""
             <script>
             var inputs = window.parent.document.querySelectorAll('input[type="text"]');
@@ -99,6 +98,7 @@ with st.form("main_form"):
     st.divider()
 
     # --- بخش ۳: اطلاعات تکمیلی ---
+    st.markdown("### 🌐 اطلاعات تکمیلی")
     v_social = st.text_input("اکانت در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("اکانت در شبکه‌های اجتماعی", "")))
     v_relatives = st.text_input("بستگان در شبکه‌های اجتماعی", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("بستگان در شبکه‌های اجتماعی", "")))
     v_notes = st.text_area("توضیحات", value="" if search_query=="+ افزودن مورد جدید" else str(user_data.get("توضیحات", "")))
