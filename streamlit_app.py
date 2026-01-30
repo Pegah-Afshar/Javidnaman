@@ -110,3 +110,34 @@ with st.form("main_form"):
             df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
             conn.update(data=df)
             st.success("بروزرسانی با موفقیت انجام شد.")
+
+if submit:
+        # Construct the data dictionary
+        updated_dict = {
+            "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+            "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
+            "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
+            "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
+            "آرامگاه": v_grave, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
+            "اکانت در شبکه‌های اجتماعی": v_social, "بستگان در شبکه‌های اجتماعی": v_relatives
+        }
+        
+        # --- THE GATEKEEPER CHECK ---
+        if not v_name or v_name.strip() == "" or v_name == "+ افزودن مورد جدید":
+            st.error("⚠️ خطای نام: وارد کردن 'اسم' برای ثبت اطلاعات الزامی است.")
+        else:
+            if search_query == "+ افزودن مورد جدید":
+                # Check if name already exists to prevent duplicates
+                if v_name in names_list:
+                    st.error("این اسم قبلاً در لیست موجود است. لطفاً از منوی بالا آن را ویرایش کنید.")
+                else:
+                    new_row = pd.DataFrame([updated_dict])
+                    df = pd.concat([df, new_row], ignore_index=True)
+                    conn.update(data=df)
+                    st.success(f"اطلاعات مربوط به '{v_name}' با موفقیت ثبت شد.")
+                    st.balloons()
+            else:
+                # Update existing
+                df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
+                conn.update(data=df)
+                st.success("بروزرسانی با موفقیت انجام شد.")
