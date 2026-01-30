@@ -119,13 +119,19 @@ with st.form("main_form"):
                 "بستگان در شبکه‌های اجتماعی": v_relatives
             }
             
-            if search_query == "+ افزودن مورد جدید":
-                new_row = pd.DataFrame([updated_dict])
-                df = pd.concat([df, new_row], ignore_index=True)
-                conn.update(data=df)
-                st.success(f"'{v_name}' ثبت شد.")
-            else:
-                df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
-                conn.update(data=df)
-                st.success("بروزرسانی شد.")
-            st.rerun()
+            try:
+                if search_query == "+ افزودن مورد جدید":
+                    new_row = pd.DataFrame([updated_dict])
+                    df = pd.concat([df, new_row], ignore_index=True)
+                    # اضافه کردن spreadsheet_url به دستور update
+                    conn.update(spreadsheet=spreadsheet_url, data=df)
+                    st.success(f"'{v_name}' با موفقیت ثبت شد.")
+                else:
+                    df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
+                    # اضافه کردن spreadsheet_url به دستور update
+                    conn.update(spreadsheet=spreadsheet_url, data=df)
+                    st.success("بروزرسانی با موفقیت انجام شد.")
+                
+                st.rerun()
+            except Exception as e:
+                st.error(f"خطا در هنگام ذخیره: {e}")
