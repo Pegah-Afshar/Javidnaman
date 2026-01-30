@@ -5,9 +5,20 @@ import pandas as pd
 st.set_page_config(page_title="ثبت اطلاعات", layout="wide")
 st.title("📋 فرم ثبت و ویرایش اطلاعات")
 
-# Connect to Google Sheets
+import streamlit as st
+from streamlit_gsheets import GSheetsConnection
+import pandas as pd
+
+st.set_page_config(page_title="ثبت اطلاعات", layout="wide")
+st.title("📋 فرم ثبت و ویرایش اطلاعات")
+
+# HARDCODE THE URL FOR A SECOND TO TEST
+# Replace the link below with your actual sheet link if this fails again
+spreadsheet_url = st.secrets["public_gsheets_url"]
+
+# Connect using the explicit URL
 conn = st.connection("gsheets", type=GSheetsConnection)
-df = conn.read(ttl=0)
+df = conn.read(spreadsheet=spreadsheet_url, ttl=0)
 
 # Define all your columns exactly as they are in the sheet
 cols = [
