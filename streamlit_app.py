@@ -3,15 +3,14 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 
 # ۱. تنظیمات صفحه
-st.set_page_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
+st.set_config(page_title="ثبت و ویرایش اطلاعات", layout="wide")
 
-# ۲. استایل‌دهی راست‌چین
+# ۲. استایل‌دهی راست‌چین و فیکس کردن مشکل باکس نام
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stTextInput, .stTextArea, .stSelectbox { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    div[data-baseweb="select"] { direction: rtl; }
     input { direction: rtl; text-align: right; }
     </style>
     """, unsafe_allow_html=True)
@@ -41,24 +40,29 @@ with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
         
-        # استفاده از selectbox با قابلیت جستجو و دکمه X
-        # برای اینکه متن شما پاک نشود، از یک لیست ترکیبی استفاده می‌کنیم
-        v_name = st.selectbox(
-            "اسم (تایپ کنید تا اسامی موجود را ببینید):",
-            options=names_list,
-            index=None,
-            placeholder="نام را وارد کنید...",
-            key="new_name_key"
-        )
+        # ایجاد لیست پیشنهادات در پشت صحنه (Datalist)
+        # این کد باعث می‌شود وقتی در باکس متن تایپ می‌کنید، لیست اسامی مشابه زیر آن ظاهر شود
+        options_html = "".join([f'<option value="{n}">' for n in names_list])
+        st.markdown(f'<datalist id="names_list">{options_html}</datalist>', unsafe_allow_html=True)
         
-        # اگر نام در لیست نبود، کاربر می‌تواند در باکس زیر تایید کند (بدون پاک شدن)
-        v_manual_name = st.text_input("اگر نام جدید است و در لیست بالا نیست، اینجا بنویسید:")
-        final_name = v_name if v_name else v_manual_name
+        # تنها باکس نام: این یک text_input است پس با کلیک روی باکس بعدی پاک نمی‌شود
+        v_name = st.text_input("اسم:", key="unique_name_input", placeholder="تایپ کنید (لیست پیشنهادات ظاهر می‌شود)...")
         
+        # تزریق جاوااسکریپت برای متصل کردن لیست پیشنهادات به باکس متن
+        st.markdown("""
+            <script>
+            var inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            for (var i = 0; i < inputs.length; i++) {
+                if (inputs[i].getAttribute('aria-label') == "اسم:") {
+                    inputs[i].setAttribute('list', 'names_list');
+                }
+            }
+            </script>
+            """, unsafe_allow_html=True)
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
-        final_name = search_query
+        v_name = search_query
 
     # --- بخش ۱: اطلاعات شخصی ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -102,11 +106,11 @@ with st.form("main_form"):
     submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        if not final_name or final_name.strip() == "":
+        if not v_name or v_name.strip() == "":
             st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": final_name, "استان": v_province, "شهر": v_city, "محله/خیابان": v_district_street, 
+                "اسم": v_name, "استان": v_province, "شهر": v_city, "محله/خیابان": v_district_street, 
                 "تاریخ شمسی": v_date_shamsi, "تاریخ میلادی": v_date_en, "محل دقیق کشته شدن": v_exact_loc,
                 "طریقه‌ی کشته شدن": v_method, "آرامگاه": v_grave, "سن": v_age, "جنسیت": v_gender, 
                 "توضیحات": v_notes, "محل تولد": v_birth_place, "تاریخ تولد": v_bday, 
@@ -118,7 +122,7 @@ with st.form("main_form"):
                     new_row = pd.DataFrame([updated_dict])
                     df = pd.concat([df, new_row], ignore_index=True)
                     conn.update(spreadsheet=spreadsheet_url, data=df)
-                    st.success(f"'{final_name}' ثبت شد.")
+                    st.success(f"'{v_name}' ثبت شد.")
                 else:
                     df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                     conn.update(spreadsheet=spreadsheet_url, data=df)
