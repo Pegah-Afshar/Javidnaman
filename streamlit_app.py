@@ -32,6 +32,8 @@ if "اسم" not in df.columns:
 
 names_list = df["اسم"].dropna().astype(str).unique().tolist()
 
+NEW_PERSON_LABEL = "— نام جدید؛ در لیست نیست —"
+
 # ─── Session state ───
 if "name" not in st.session_state:
     st.session_state.name = ""
@@ -39,13 +41,30 @@ if "editing_name" not in st.session_state:
     st.session_state.editing_name = None
 if "prefill" not in st.session_state:
     st.session_state.prefill = None
+# ذخیره df برای استفاده در callback
+if "_df" not in st.session_state:
+    st.session_state._df = df
+
+def on_dropdown_pick():
+    """وقتی کاربر از dropdown یک نام موجود را انتخاب کند، داده را بارگذاری کن."""
+    chosen = st.session_state.get("name_picker")
+    if not chosen or chosen == NEW_PERSON_LABEL:
+        st.session_state.editing_name = None
+        st.session_state.prefill = None
+        return
+    d = st.session_state._df
+    row = d[d["اسم"].astype(str) == chosen]
+    if not row.empty:
+        st.session_state.editing_name = chosen
+        st.session_state.name = chosen
+        st.session_state["name_input"] = chosen
+        st.session_state.prefill = row.iloc[0].to_dict()
 
 # ─── فقط یک باکس برای نام ───
-# نام خارج از فرم است تا با Enter فرم ارسال نشود؛ بعد از تایپ نام، Tab یا کلیک به باکس بعدی بروید.
 st.markdown("### نام (الزامی)")
 st.caption("نام را تایپ کنید. اگر در لیست بود از dropdown انتخاب کنید؛ وگرنه ادامه تایپ کنید و Tab یا کلیک به باکس بعدی بروید.")
 
-# تنها باکس نام — فقط همین یک باکس برای تایپ نام
+# تنها باکس نام
 name = st.text_input(
     "نام",
     value=st.session_state.name,
@@ -55,41 +74,32 @@ name = st.text_input(
 st.session_state.name = (name or "").strip()
 current_name = st.session_state.name
 
-# وقتی تایپ کردید: لیست اسامی مشابه زیر باکس نام ظاهر می‌شود (کلیک روی نام = ویرایش)
-NEW_PERSON_LABEL = "— نام جدید؛ در لیست نیست —"
+# وقتی تایپ کردید: dropdown اسامی مشابه (کلیک روی نام = ویرایش)
 if current_name:
+    st.session_state._df = df  # همیشه تازه نگه دار
     matches = [n for n in names_list if current_name.lower() in n.lower()]
     pick_options = [NEW_PERSON_LABEL] + matches
-    default_idx = 0
-    if st.session_state.editing_name and st.session_state.editing_name in pick_options:
-        default_idx = pick_options.index(st.session_state.editing_name)
+    # مقدار فعلی dropdown: اگر در حال ویرایش هستیم همان نام، وگرنه «نام جدید»
+    current_picker = st.session_state.editing_name if (st.session_state.editing_name and st.session_state.editing_name in pick_options) else NEW_PERSON_LABEL
     st.caption("اگر این شخص در لیست بالا بود، اینجا انتخاب کنید (ویرایش):")
     chosen = st.selectbox(
         "لیست اسامی موجود",
         options=pick_options,
-        index=default_idx if default_idx < len(pick_options) else 0,
+        index=pick_options.index(current_picker) if current_picker in pick_options else 0,
         key="name_picker",
         label_visibility="collapsed",
+        on_change=on_dropdown_pick,
     )
-    if chosen and chosen != NEW_PERSON_LABEL:
-        row = df[df["اسم"].astype(str) == chosen]
-        if not row.empty and (st.session_state.editing_name != chosen or st.session_state.prefill is None):
-            st.session_state.editing_name = chosen
-            st.session_state.name = chosen
-            st.session_state["name_input"] = chosen  # همان باکس نام مقدار انتخاب‌شده را نشان می‌دهد
-            st.session_state.prefill = row.iloc[0].to_dict()
-            if hasattr(st, "rerun"):
-                st.rerun()
-            else:
-                st.experimental_rerun()
-    else:
-        if st.session_state.editing_name is not None:
-            st.session_state.editing_name = None
-            st.session_state.prefill = None
+    # اگر کاربر «نام جدید» را انتخاب کرد، حالت ویرایش را پاک کن
+    if chosen == NEW_PERSON_LABEL and st.session_state.editing_name is not None:
+        st.session_state.editing_name = None
+        st.session_state.prefill = None
 else:
     if st.session_state.editing_name is not None:
         st.session_state.editing_name = None
         st.session_state.prefill = None
+    if "name_picker" in st.session_state:
+        st.session_state["name_picker"] = NEW_PERSON_LABEL
 
 editing_name = st.session_state.editing_name
 prefill = st.session_state.prefill
