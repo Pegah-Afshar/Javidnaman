@@ -11,7 +11,6 @@ st.markdown("""
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, .stSelectbox, .stTextInput, .stTextArea { direction: rtl !important; text-align: right !important; }
     .stButton button { display: block; margin-right: 0; margin-left: auto; background-color: #4CAF50; color: white; }
-    div[data-baseweb="popover"] { direction: rtl; text-align: right; }
     input { text-align: right; direction: rtl; }
     </style>
     """, unsafe_allow_html=True)
@@ -27,12 +26,12 @@ except Exception as e:
     st.error("خطا در اتصال به گوگل‌شیت.")
     st.stop()
 
-# 4. Data Prep
+# 4. Preparation
 names_list = df['اسم'].dropna().unique().tolist()
 
 # Top Search for Edit Mode
 search_query = st.selectbox(
-    "🔍 جستجوی لیست (برای ویرایش انتخاب کنید، برای ثبت جدید روی گزینه اول بمانید):", 
+    "🔍 برای ویرایش از این لیست انتخاب کنید (برای ثبت جدید روی گزینه اول بمانید):", 
     ["+ افزودن مورد جدید"] + names_list
 )
 
@@ -40,25 +39,22 @@ search_query = st.selectbox(
 with st.form("main_form"):
     if search_query == "+ افزودن مورد جدید":
         st.subheader("✨ ثبت ورودی جدید")
-        # This is the "Combobox" behavior. You type, it filters. 
-        # If you finish typing a new name, we capture it.
-        v_name = st.selectbox(
-            "اسم (تایپ کنید... اگر در لیست باشد نمایش داده می‌شود):",
-            options=names_list,
-            index=None,
-            placeholder="نام را تایپ کنید...",
-            key="new_name_selector"
-        )
+        # SINGLE BOX for Name
+        v_name = st.text_input("اسم")
         
-        # This hidden-ish text input catches the name if you're typing something BRAND NEW
-        v_manual_name = st.text_input("اگر نام جدید است، دوباره اینجا تایید کنید:")
-        
-        # Decide which name to use
-        final_name = v_name if v_name else v_manual_name
+        # REAL-TIME SEARCH LOGIC
+        if v_name.strip() != "":
+            # Search for similar names in your list
+            matches = [n for n in names_list if v_name in n]
+            if matches:
+                if v_name in names_list:
+                    st.error(f"⚠️ نام '{v_name}' دقیقاً در لیست موجود است!")
+                else:
+                    st.warning(f"🔔 نام‌های مشابه یافت شد: {', '.join(matches[:5])}")
     else:
         st.subheader(f"🔄 ویرایش اطلاعات: {search_query}")
         user_data = df[df['اسم'] == search_query].iloc[0]
-        final_name = search_query
+        v_name = search_query
 
     # --- Section 1: Personal Info ---
     st.markdown("### 👤 اطلاعات شخصی")
@@ -99,11 +95,11 @@ with st.form("main_form"):
     submit = st.form_submit_button("💾 ذخیره نهایی")
 
     if submit:
-        if not final_name or final_name.strip() == "":
-            st.error("⚠️ نام نمی‌تواند خالی باشد.")
+        if not v_name or v_name.strip() == "":
+            st.error("⚠️ نام الزامی است.")
         else:
             updated_dict = {
-                "اسم": final_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
+                "اسم": v_name, "شهر": v_city_base, "محله": v_district, "خیابان": v_street, 
                 "استان": v_province, "تاریخ": v_date, "تاریخ میلادی": v_date_en, 
                 "سن": v_age, "جنسیت": v_gender, "توضیحات": v_notes, 
                 "محل دقیق کشته شدن": v_exact_loc, "طریقه‌ی کشته شدن": v_method, 
@@ -115,9 +111,9 @@ with st.form("main_form"):
                 new_row = pd.DataFrame([updated_dict])
                 df = pd.concat([df, new_row], ignore_index=True)
                 conn.update(data=df)
-                st.success(f"'{final_name}' ثبت شد.")
+                st.success(f"'{v_name}' با موفقیت ثبت شد.")
             else:
                 df.loc[df['اسم'] == search_query, list(updated_dict.keys())] = list(updated_dict.values())
                 conn.update(data=df)
-                st.success("بروزرسانی شد.")
+                st.success("بروزرسانی انجام شد.")
             st.rerun()
