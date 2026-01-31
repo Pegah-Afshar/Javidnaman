@@ -87,7 +87,7 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 INTELLIGENT IMPORT (CANDIDATE SEARCH)
+# 📥 INTELLIGENT IMPORT (Robust Empty Check)
 # ==========================================
 with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
@@ -99,7 +99,6 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
             up_df.columns = up_df.columns.astype(str).str.strip()
             up_df = up_df.astype(str)
 
-            # 2. Column Selectors
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords): return i
@@ -114,8 +113,13 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
             with c3:
                 col_prov = st.selectbox("ستون 'استان':", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
 
-            # 3. Build Name Index (Map Name -> List of Rows in Sheet)
-            # This handles duplicates in the sheet properly
+            # Helper: Is this cell TRULY empty? (Handles spaces, nan, etc.)
+            def is_empty(val):
+                if not val: return True
+                s = str(val).strip().lower()
+                return s == "" or s == "nan" or s == "none"
+
+            # 3. Build Name Index
             name_index = {}
             for index, row in df.iterrows():
                 f_name = str(row.get('اسم', '')).strip()
@@ -132,7 +136,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                 u_city = str(row[col_city]).strip()
                 u_prov = str(row[col_prov]).strip()
                 
-                if not u_name or u_name.lower() == 'nan': continue
+                if is_empty(u_name): continue
 
                 # Is this name in our sheet?
                 candidate_list = name_index.get(u_name, [])
@@ -144,13 +148,13 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                     sheet_city = str(candidate['data'].get('شهر', '')).strip()
                     sheet_prov = str(candidate['data'].get('استان', '')).strip()
                     
-                    # LOGIC: Compatible if Sheet location is EMPTY or MATCHES Excel
-                    city_ok = (sheet_city == "") or (sheet_city == u_city)
-                    prov_ok = (sheet_prov == "") or (sheet_prov == u_prov)
+                    # LOGIC: Compatible if Sheet location is EMPTY or MATCHES Excel (Case Insensitive)
+                    city_ok = is_empty(sheet_city) or (sheet_city.lower() == u_city.lower())
+                    prov_ok = is_empty(sheet_prov) or (sheet_prov.lower() == u_prov.lower())
                     
                     if city_ok and prov_ok:
                         matched_record = candidate
-                        break # Found our person!
+                        break 
                 
                 if matched_record:
                     # --- UPDATE (MERGE) ---
@@ -170,11 +174,12 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                         elif header in up_df.columns: excel_val = str(row[header]).strip()
                         
                         # OVERWRITE LOGIC: 
-                        # If Sheet is Empty AND Excel has data -> Update
-                        if current_val == "" and excel_val != "":
+                        # If Sheet is effectively EMPTY AND Excel has data -> Update
+                        if is_empty(current_val) and not is_empty(excel_val):
                             merged_row.append(excel_val)
                             has_new_info = True
                         else:
+                            # Keep existing Sheet data
                             merged_row.append(current_val)
                     
                     if has_new_info:
@@ -182,7 +187,6 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
 
                 else:
                     # --- ADD NEW ---
-                    # Name not found, OR found but locations contradicted (e.g. Sheet=Shiraz, Excel=Tehran)
                     new_row = []
                     for header in all_headers:
                         if header == 'اسم': new_row.append(u_name)
