@@ -9,7 +9,7 @@ import time
 # 1. CONFIGURATION (Edit this to match your Sheet EXACTLY)
 # ==========================================
 
-GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "نام پدر"]
+GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
 # ✅ UPDATED: I added "شدن" and checked spelling based on your request
 GROUP_INCIDENT = [
@@ -17,14 +17,13 @@ GROUP_INCIDENT = [
     "تاریخ میلادی", 
     "استان", 
     "شهر", 
-    "خیابان", 
-    "مکان دقیق", 
-    "شدن",            # Changed from "نحوه کشته شدن"
-    "نحوه کشته شدن",  # Kept this just in case
-    "مزار"
+    "محله خیابان", 
+    "محل دقیق کشته شدن", 
+    "طریقه‌ی کشته شدن",            
+    "آرامگاه",  
 ]
 
-GROUP_OTHER = ["شبکه های اجتماعی", "بستگان", "توضیحات تکمیلی"]
+GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
 
