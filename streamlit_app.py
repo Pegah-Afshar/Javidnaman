@@ -76,7 +76,7 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-st.title("📋 سامانه مدیریت هوشمند")
+
 
 # 🔍 DEBUGGER: Use this to see exact column names if groups are still wrong
 with st.expander("🛠️ ابزار عیب‌یابی (مشاهده نام دقیق ستون‌ها)"):
