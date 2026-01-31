@@ -6,12 +6,11 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # ==========================================
-# 1. CONFIGURATION (Edit this to match your Sheet EXACTLY)
+# 1. CONFIGURATION
 # ==========================================
 
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# ✅ UPDATED: I added "شدن" and checked spelling based on your request
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -19,8 +18,8 @@ GROUP_INCIDENT = [
     "شهر", 
     "محله خیابان", 
     "محل دقیق کشته شدن", 
-    "طریقه‌ی کشته شدن",            
-    "آرامگاه",  
+    "طریقه‌ی کشته شدن",           
+    "آرامگاه"
 ]
 
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
@@ -64,6 +63,8 @@ if 'active_name' not in st.session_state:
 try:
     df = get_data()
     all_headers = df.columns.tolist()
+    # Note: 'اسم' is excluded from form_headers to prevent changing the key, 
+    # so it won't appear in the Personal Info inputs even if listed in GROUP_PERSONAL.
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
@@ -75,14 +76,6 @@ def search_names(search_term: str):
     matches = [n for n in existing_names if search_term in n]
     if search_term not in matches: matches.insert(0, search_term)
     return matches
-
-
-
-# 🔍 DEBUGGER: Use this to see exact column names if groups are still wrong
-#with st.expander("🛠️ ابزار عیب‌یابی (مشاهده نام دقیق ستون‌ها)"):
- #   st.write("نام ستون‌هایی که برنامه از گوگل شیت می‌خواند (دقیقاً باید با کد یکی باشند):")
-  #  st.code(form_headers)
-   # st.caption("اگر ستونی در جای اشتباه است، نام آن را از بالا کپی کنید و در لیست‌های کد (GROUP_INCIDENT) جایگزین کنید.")
 
 # ==========================================
 # SCREEN 1: SEARCH
@@ -146,7 +139,7 @@ else:
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs)
 
-        # SECTION 2: INCIDENT (Corrected Group)
+        # SECTION 2: INCIDENT
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs)
 
