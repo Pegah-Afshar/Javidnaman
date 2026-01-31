@@ -20,6 +20,7 @@ st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
     label, input, textarea, .stSelectbox, .stMarkdown, .stToast, .stExpander, .stMetric, .stAlert { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; }
+    .stButton button:hover { background-color: #1557b0; }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
@@ -27,11 +28,24 @@ st.markdown("""<style>
 # ==========================================
 
 def clean_str(val):
-    """Basic cleaner for display and saving (keeps spaces, but removes junk)"""
+    """Basic cleaner for display and saving."""
     if val is None: return ""
     s = str(val).strip()
     if s.lower() in ['nan', 'none', 'nat', 'null', '0', '0.0']: return ""
     return s
+
+def format_age(val):
+    """
+    Forces Age to be an Integer string (e.g. '25.0' -> '25').
+    """
+    s = clean_str(val)
+    if not s: return ""
+    try:
+        # Try converting to float first (handles 25.0), then int
+        return str(int(float(s)))
+    except:
+        # If it's text (e.g. "Unknown"), return as is
+        return s
 
 def get_fingerprint(text):
     """
@@ -60,8 +74,10 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+    # Get all records
     raw_data = sheet.get_all_records(expected_headers=[])
     df = pd.DataFrame(raw_data)
+    # Force everything to string
     df = df.astype(str)
     return df
 
@@ -82,9 +98,25 @@ except Exception as e:
     st.error(f"❌ خطا: {e}")
     st.stop()
 
+# ==========================================
+# 🛡️ SIDEBAR: BACKUP
+# ==========================================
+with st.sidebar:
+    st.header("💾 پشتیبان‌گیری")
+    st.info("قبل از تغییرات گروهی، دانلود کنید.")
+    csv = df.to_csv(index=False).encode('utf-8-sig')
+    st.download_button(
+        label="📥 دانلود فایل CSV (بکاپ)",
+        data=csv,
+        file_name=f"Backup_Javidnaman_{time.strftime('%Y-%m-%d_%H-%M')}.csv",
+        mime="text/csv",
+    )
+
+# ==========================================
+# MAIN SEARCH LOGIC
+# ==========================================
 def search_names(search_term: str):
     if not search_term: return existing_names
-    # Simple search for the dropdown (keeps spaces for readability)
     matches = [n for n in existing_names if search_term in n]
     if search_term not in matches: matches.insert(0, search_term)
     return matches
@@ -97,11 +129,11 @@ with c_title: st.title("📋 ")
 with c_count: st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 IMPORT (WITH FINGERPRINT MATCHING)
+# 📥 IMPORT (Turbo + Smart Match + Integer Age)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matching)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
     uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
-    debug_mode = st.checkbox("🐞 نمایش جزئیات دیباگ", value=False)
+    debug_mode = st.checkbox("🐞 نمایش جزئیات", value=False)
     
     if uploaded_file:
         try:
@@ -121,18 +153,16 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matchi
             col_city = c2.selectbox("ستون 'شهر':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'شهر')))
             col_prov = c3.selectbox("ستون 'استان':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'استان')))
 
-            # 3. BUILD INDEX USING FINGERPRINTS
-            # Key = Crushed Name (no spaces), Value = List of {idx, data}
+            # 3. BUILD FINGERPRINT INDEX
             sheet_index = {}
             for idx, row in df.iterrows():
                 nm = clean_str(row.get('اسم', ''))
                 if nm:
-                    # ✨ MAGIC HERE: Create Fingerprint Key
-                    fingerprint = get_fingerprint(nm)
-                    if fingerprint not in sheet_index: sheet_index[fingerprint] = []
-                    sheet_index[fingerprint].append({'idx': idx + 2, 'data': row})
+                    fp = get_fingerprint(nm)
+                    if fp not in sheet_index: sheet_index[fp] = []
+                    sheet_index[fp].append({'idx': idx + 2, 'data': row})
 
-            # 4. RUN COMPARISON
+            # 4. PROCESS LOOP
             rows_to_add = []
             rows_to_update = []
             log_messages = []
@@ -141,23 +171,21 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matchi
                 u_name = clean_str(row[col_name])
                 if not u_name: continue
 
-                # ✨ MAGIC HERE: Search using Fingerprint
                 u_key = get_fingerprint(u_name)
-                
                 candidates = sheet_index.get(u_key, [])
                 match_found = None
 
-                # Normalize Excel Location for comparison
+                # Normalize Location
                 u_city = clean_str(row[col_city])
                 u_prov = clean_str(row[col_prov])
 
-                # Find Compatible Match
+                # MATCHING LOGIC
                 for cand in candidates:
                     s_data = cand['data']
                     s_city = clean_str(s_data.get('شهر', ''))
                     s_prov = clean_str(s_data.get('استان', ''))
                     
-                    # We also fingerprint cities/provs to ignore spaces there too!
+                    # Ignore spaces in city/prov too
                     city_ok = (get_fingerprint(s_city) == "") or (get_fingerprint(s_city) == get_fingerprint(u_city)) or (u_city == "")
                     prov_ok = (get_fingerprint(s_prov) == "") or (get_fingerprint(s_prov) == get_fingerprint(u_prov)) or (u_prov == "")
 
@@ -166,68 +194,87 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matchi
                         break
                 
                 if match_found:
-                    # CHECK FOR MERGE
+                    # MERGE
                     r_idx = match_found['idx']
                     s_data = match_found['data']
                     merged = []
                     do_update = False
-                    debug_info = []
-
+                    
                     for h in all_headers:
                         s_val = clean_str(s_data.get(h, ""))
-                        
                         e_val = ""
-                        if h == 'اسم': e_val = u_name # Use the Excel name formatting if needed, or keep original? Usually keep original is safer, but user might want fixes.
-                        elif h in up_df.columns: e_val = clean_str(row[h])
+                        
+                        if h == 'اسم': 
+                            e_val = u_name
+                        elif h in up_df.columns: 
+                            raw_val = row[h]
+                            # 🔢 AGE FIX: Convert to Integer format if column is 'سن'
+                            if h == 'سن':
+                                e_val = format_age(raw_val)
+                            else:
+                                e_val = clean_str(raw_val)
 
-                        # UPDATE ONLY IF SHEET EMPTY & EXCEL HAS DATA
+                        # Logic: Sheet Empty & Excel Has Data -> FILL
                         if s_val == "" and e_val != "":
                             merged.append(e_val)
                             do_update = True
-                            if debug_mode and len(log_messages) < 10:
-                                debug_info.append(f"{h}: {e_val}")
                         else:
                             merged.append(s_val)
                     
                     if do_update:
                         rows_to_update.append((r_idx, merged))
                         if debug_mode and len(log_messages) < 10:
-                            log_messages.append(f"🔄 (تطبیق فضا) '{u_name}': {', '.join(debug_info)}")
+                            log_messages.append(f"🔄 تکمیل: {u_name}")
 
                 else:
                     # ADD NEW
                     new_row = []
                     for h in all_headers:
-                        if h == 'اسم': new_row.append(u_name)
-                        elif h in up_df.columns: new_row.append(clean_str(row[h]))
-                        else: new_row.append("")
+                        if h == 'اسم':
+                            new_row.append(u_name)
+                        elif h in up_df.columns:
+                            raw_val = row[h]
+                            # 🔢 AGE FIX
+                            if h == 'سن':
+                                new_row.append(format_age(raw_val))
+                            else:
+                                new_row.append(clean_str(raw_val))
+                        else:
+                            new_row.append("")
                     rows_to_add.append(new_row)
                     if debug_mode and len(log_messages) < 10:
-                        log_messages.append(f"➕ جدید: '{u_name}'")
+                        log_messages.append(f"➕ جدید: {u_name}")
 
-            # 5. EXECUTE
+            # 5. EXECUTE (TURBO MODE)
             if debug_mode:
-                st.info("🐞 گزارش دیباگ:")
-                for msg in log_messages: st.text(msg)
+                st.info("Log:")
+                for m in log_messages: st.text(m)
 
             if rows_to_add or rows_to_update:
                 c_a, c_b = st.columns(2)
                 c_a.warning(f"🆕 افراد جدید: {len(rows_to_add)}")
                 c_b.info(f"🔄 تکمیل اطلاعات: {len(rows_to_update)}")
                 
-                if st.button("🚀 ذخیره نهایی"):
-                    with st.status("در حال کار...", expanded=True):
+                if st.button("🚀 ذخیره نهایی (Turbo)"):
+                    with st.status("در حال پردازش سریع...", expanded=True):
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         
+                        # 1. Batch Add
                         if rows_to_add:
                             sheet.append_rows(rows_to_add)
-                        if rows_to_update:
-                            for r, vals in rows_to_update:
-                                sheet.update(range_name=f"A{r}", values=[vals])
-                                time.sleep(0.3)
                         
-                        st.success("تمام شد!")
+                        # 2. Batch Update (API Efficient)
+                        if rows_to_update:
+                            batch_reqs = []
+                            for r_num, r_vals in rows_to_update:
+                                batch_reqs.append({
+                                    'range': f"A{r_num}",
+                                    'values': [r_vals]
+                                })
+                            sheet.batch_update(batch_reqs)
+                        
+                        st.success("✅ انجام شد!")
                         get_data.clear()
                         time.sleep(2)
                         st.rerun()
@@ -238,7 +285,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matchi
             st.error(f"Error: {e}")
 
 # ==========================================
-# SEARCH & FORM
+# SEARCH
 # ==========================================
 if st.session_state.active_name is None:
     st.info("👇 نام را جستجو کنید...")
@@ -247,6 +294,7 @@ if st.session_state.active_name is None:
         st.session_state.active_name = selected_value
         st.rerun()
 else:
+    # EDIT FORM
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
@@ -267,12 +315,15 @@ else:
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i%cols]:
-                st.text_input(h, value=str(current_data.get(h, "")), key=f"input_{h}")
+                val = current_data.get(h, "")
+                # AGE FIX on Load
+                if h == 'سن': val = format_age(val)
+                st.text_input(h, value=str(val), key=f"input_{h}")
 
     with st.form("main_form"):
         st.markdown("### اطلاعات")
         draw(GROUP_PERSONAL, 3)
-        draw(GROUP_INCIDENT, 1)
+        draw(GROUP_INCIDENT, 1) # Vertical
         draw(GROUP_OTHER, 2)
         
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
@@ -285,8 +336,10 @@ else:
             
             row_data = []
             for h in all_headers:
+                val = st.session_state.get(f"input_{h}", "")
                 if h == 'اسم': row_data.append(locked_name)
-                else: row_data.append(st.session_state.get(f"input_{h}", ""))
+                elif h == 'سن': row_data.append(format_age(val)) # Format on manual save too
+                else: row_data.append(val)
             
             if is_edit_mode:
                 cell = sheet.find(locked_name)
@@ -294,7 +347,7 @@ else:
             else:
                 sheet.append_row(row_data)
             
-            st.toast("انجام شد")
+            st.toast("ذخیره شد")
             get_data.clear()
             st.session_state.active_name = None
             time.sleep(1)
