@@ -6,13 +6,12 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # 1. Setup & RTL
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
+st.set_page_config(page_title=" جاویدنامان", layout="wide")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, input, textarea, .stSelectbox, .stMarkdown { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; height: 3em; }
-    /* Hide the search box label */
     .st-emotion-cache-16idsys p { display: none; } 
 </style>""", unsafe_allow_html=True)
 
@@ -46,85 +45,80 @@ def search_names(search_term: str):
     if not search_term:
         return existing_names
     matches = [n for n in existing_names if search_term in n]
-    # IMPORTANT: Ensure the typed name is always the first option
     if search_term not in matches:
         matches.insert(0, search_term)
     return matches
 
-st.title("📋 سامانه مدیریت هوشمند")
+#st.title("📋 سامانه مدیریت هوشمند")
 
 # ==========================================
-# LOGIC SPLIT
+# SCREEN 1: SEARCH
 # ==========================================
-
-# SCREEN 1: SEARCH (Only shows if NO name is currently selected)
 if st.session_state.active_name is None:
-    st.info("👇 نام را جستجو کنید یا نام جدید بنویسید و **روی آن کلیک کنید**")
+    st.info("👇 نام **")
     
     selected_value = st_searchbox(
         search_names,
         key="search_box_main",
-        placeholder="نام مورد نظر را تایپ کنید..."
+        placeholder="..."
     )
 
-    # If user picks a name (New or Old), Lock it and Rerun
     if selected_value:
         st.session_state.active_name = selected_value
         st.rerun()
 
-# SCREEN 2: FORM (Only shows if a name IS selected)
+# ==========================================
+# SCREEN 2: FORM
+# ==========================================
 else:
-    # 1. Get the locked name
     locked_name = st.session_state.active_name
-    
-    # 2. Check if it's Edit or New
     is_edit_mode = locked_name in existing_names
     
-    # 3. Header & Back Button
+    # Header
     c_info, c_btn = st.columns([5, 1])
     with c_info:
         if is_edit_mode:
-            st.success(f"✏️ ویرایش اطلاعات: **{locked_name}**")
+            st.success(f"✏️ ویرایش : **{locked_name}**")
         else:
             st.warning(f"🆕 ثبت فرد جدید: **{locked_name}**")
     
     with c_btn:
-        # This button clears the state and goes back to Screen 1
         if st.button("❌ تغییر نام"):
+            # Clear Inputs Logic
+            for header in form_headers:
+                key = f"input_{header}"
+                if key in st.session_state:
+                    del st.session_state[key]
+            
             st.session_state.active_name = None
             st.rerun()
 
-    # 4. Prepare Data for Inputs
-    # If editing, get row data. If new, get empty dict.
+    # Prepare Data
     if is_edit_mode:
         current_data = df[df['اسم'] == locked_name].iloc[0].to_dict()
     else:
         current_data = {}
 
-    # 5. The Form
     with st.form("entry_form"):
         st.markdown("---")
         
         cols = st.columns(3)
         user_inputs = {}
 
-        # Dynamically create boxes
         for i, header in enumerate(form_headers):
             with cols[i % 3]:
-                # We fetch the existing value (or empty string)
                 val = current_data.get(header, "")
-                # We use a unique key for every input to prevent conflicts
+                # Create input
                 user_inputs[header] = st.text_input(header, value=str(val), key=f"input_{header}")
 
         st.markdown("---")
-        submitted = st.form_submit_button("💾 ذخیره نهایی")
+        submitted = st.form_submit_button("💾 ذخیره ")
 
         if submitted:
             try:
                 client = get_connection()
                 sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 
-                # Build Row in exact order
                 final_row = []
                 for header in all_headers:
                     if header == 'اسم':
@@ -135,15 +129,31 @@ else:
                 if is_edit_mode:
                     cell = sheet.find(locked_name)
                     sheet.update(range_name=f"A{cell.row}", values=[final_row])
-                    st.toast("✅ بروزرسانی انجام شد", icon='🎉')
                 else:
                     sheet.append_row(final_row)
-                    st.toast("✅ نام جدید اضافه شد", icon='✨')
+
+                # =========================================
+                # ✅ SUCCESS & CLEANUP SECTION
+                # =========================================
                 
-                # Success Logic: Clear name and go back to search
+                # 1. Show Success Message
+                st.success("✅  ثبت شد ")
+                
+                # 2. Clear Google Cache
+                get_data.clear()
+                
+                # 3. Forcefully Clear Input Box Memory
+                # This ensures the boxes are EMPTY next time you open the form
+                for header in form_headers:
+                    key = f"input_{header}"
+                    if key in st.session_state:
+                        del st.session_state[key]
+                
+                # 4. Reset Name
                 st.session_state.active_name = None
-                get_data.clear() # Clear cache
-                time.sleep(1)
+                
+                # 5. Wait 2 seconds so user sees the message, then Reload
+                time.sleep(2)
                 st.rerun()
                 
             except Exception as e:
