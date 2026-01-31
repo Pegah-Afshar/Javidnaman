@@ -10,7 +10,7 @@ import numpy as np
 # 1. CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="مدیریت جاویدنامان", 
+    page_title=" جاویدنامان", 
     layout="wide", 
     page_icon="📋",
     initial_sidebar_state="collapsed"
@@ -22,16 +22,9 @@ GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان"
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 NUMERIC_FIELDS = ["سن"]
 
-# 🎨 CSS FOR HORIZONTAL TOOLBAR
+# 🎨 CLEAN CSS (Safe for Laptop & Phone)
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
-    
-    /* Make buttons in the toolbar same height */
-    div[data-testid="column"] button {
-        width: 100%;
-        height: 42px; /* Fixed height for alignment */
-        border-radius: 8px;
-    }
     
     /* Input Labels */
     .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-weight: bold; color: #444; }
@@ -44,6 +37,11 @@ st.markdown("""<style>
         margin-top: 15px;
         margin-bottom: 5px;
         border-bottom: 1px solid #eee;
+    }
+    
+    /* Toolbar Button Styling */
+    div[data-testid="stHorizontalBlock"] button {
+        border-radius: 8px;
     }
 </style>""", unsafe_allow_html=True)
 
@@ -70,6 +68,13 @@ def get_fingerprint(text):
     t = t.replace("ي", "ی").replace("ك", "ک")
     t = t.replace(" ", "").replace("\u200c", "").replace("\t", "")
     return t
+
+def clear_form_state():
+    """Forcefully clears all input boxes"""
+    for key in list(st.session_state.keys()):
+        if key.startswith("input_"):
+            del st.session_state[key]
+    st.session_state.active_name = None
 
 # ==========================================
 # 3. BACKEND
@@ -107,9 +112,9 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 🛠️ TOP TOOLBAR (ROW LAYOUT)
+# 🛠️ TOP TOOLBAR (Visible on Laptop & Phone)
 # ==========================================
-# We use columns to put them in a row: [Refresh] [Backup] [Import Expander]
+# [Refresh] [Backup] [Import]
 c_tools_1, c_tools_2, c_tools_3 = st.columns([1, 1, 2])
 
 with c_tools_1:
@@ -120,7 +125,7 @@ with c_tools_1:
 with c_tools_2:
     csv = df.to_csv(index=False).encode('utf-8-sig')
     st.download_button(
-        label="📥 دانلود بکاپ",
+        label="📥 بکاپ",
         data=csv,
         file_name=f"Backup_{time.strftime('%Y%m%d')}.csv",
         mime="text/csv",
@@ -128,7 +133,7 @@ with c_tools_2:
     )
 
 with c_tools_3:
-    with st.expander("📤 ایمپورت اکسل (پیشرفته)"):
+    with st.expander("📤 ایمپورت اکسل"):
         uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
         
         if uploaded_file:
@@ -216,7 +221,7 @@ with c_tools_3:
             except Exception as e:
                 st.error(f"خطا: {e}")
 
-st.markdown("---") # Separator line between Toolbar and Main App
+st.divider() # Clean separator
 
 # ==========================================
 # 5. MAIN APP INTERFACE
@@ -227,24 +232,26 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-# SEARCH
+# --- SEARCH MODE ---
 if st.session_state.active_name is None:
-    # We put the Title and Count next to the Search Box
-    c_head1, c_head2 = st.columns([4, 1])
-    with c_head1: st.title("🔍 جستجوی پرونده")
-    with c_head2: st.metric("کل", len(existing_names))
-    
-    selected_value = st_searchbox(
-        search_names, 
-        key="search_box_main", 
-        placeholder="نام را تایپ کنید..."
-    )
-    
-    if selected_value:
-        st.session_state.active_name = selected_value
-        st.rerun()
+    # Use standard container to ensure visibility on laptop
+    with st.container():
+        c_head1, c_head2 = st.columns([4, 1])
+        with c_head1: st.subheader("🔍 جستجوی پرونده")
+        with c_head2: st.caption(f"تعداد: {len(existing_names)}")
+        
+        # Search Box is here, clearly visible
+        selected_value = st_searchbox(
+            search_names, 
+            key="search_box_main", 
+            placeholder="نام را تایپ کنید..."
+        )
+        
+        if selected_value:
+            st.session_state.active_name = selected_value
+            st.rerun()
 
-# FORM
+# --- FORM MODE ---
 else:
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
@@ -254,8 +261,8 @@ else:
         if is_edit_mode: st.success(f"✏️ ویرایش: **{locked_name}**")
         else: st.warning(f"🆕 جدید: **{locked_name}**")
     with c_close:
-        if st.button("❌"):
-            st.session_state.active_name = None
+        if st.button("❌", use_container_width=True):
+            clear_form_state() # Force Clear!
             st.rerun()
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
@@ -270,11 +277,12 @@ else:
             with cc[i % cols]:
                 val = current_data.get(h, "")
                 if h == 'سن': val = format_age(val)
+                # IMPORTANT: key must be dynamic to allow clearing
                 st.text_input(h, value=str(val), key=f"input_{h}")
 
     with st.form("main_form"):
         draw_section("👤 اطلاعات فردی", GROUP_PERSONAL, 3)
-        draw_section("📍 اطلاعات حادثه", GROUP_INCIDENT, 2)
+        draw_section("📍 اطلاعات واقعه", GROUP_INCIDENT, 2)
         draw_section("🔗 سایر اطلاعات", GROUP_OTHER, 2)
         
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
@@ -299,10 +307,12 @@ else:
                 else:
                     sheet.append_row(row_data)
                 
-                st.toast("ذخیره شد", icon='✅')
+                st.toast("اطلاعات ذخیره شد.", icon='✅')
                 get_data.clear()
                 time.sleep(1)
-                st.session_state.active_name = None
+                
+                # CRITICAL FIX: Clear inputs after save
+                clear_form_state()
                 st.rerun()
             except Exception as e:
-                st.error(f"خطا: {e}")
+                st.error(f"خطا در ذخیره سازی: {e}")
