@@ -93,7 +93,7 @@ def search_names(search_term: str):
 # APP UI
 # ==========================================
 c_title, c_count = st.columns([5, 1])
-with c_title: st.title("📋 سامانه مدیریت هوشمند")
+with c_title: st.title("📋 ")
 with c_count: st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
