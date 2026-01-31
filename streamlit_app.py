@@ -11,6 +11,7 @@ import time
 
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
+# Exact order you requested
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -36,8 +37,26 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. BACKEND CONNECTIONS
+# 2. CORE FUNCTIONS
 # ==========================================
+
+# 🟢 CRITICAL FIX: Normalize Persian Text
+# This ensures "ي" becomes "ی" so names match correctly
+def normalize_text(text):
+    if pd.isna(text) or text is None:
+        return ""
+    text = str(text).strip()
+    
+    # Replace Arabic characters with Persian
+    text = text.replace("ي", "ی")
+    text = text.replace("ك", "ک")
+    
+    # Handle "nan" string from Excel
+    if text.lower() in ["nan", "none", "null", "-", ""]:
+        return ""
+    
+    return text
+
 @st.cache_resource
 def get_connection():
     scope = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -49,7 +68,7 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-    # Ensure all data is read as string to prevent type mismatches
+    # Get all records as string to prevent type errors
     return pd.DataFrame(sheet.get_all_records(expected_headers=[]))
 
 # ==========================================
@@ -60,14 +79,14 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    # Simple cleanup: just remove extra spaces from column names
-    df.columns = df.columns.astype(str).str.strip()
+    # Normalize headers
+    df.columns = [normalize_text(c) for c in df.columns]
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
-    existing_names = [str(x).strip() for x in df['اسم'].dropna().tolist() if str(x).strip()]
+    existing_names = [normalize_text(x) for x in df['اسم'].tolist() if normalize_text(x)]
 except Exception as e:
-    st.error(f"❌ خطا: {e}")
+    st.error(f"❌ خطا در دریافت اطلاعات: {e}")
     st.stop()
 
 def search_names(search_term: str):
@@ -77,7 +96,7 @@ def search_names(search_term: str):
     return matches
 
 # ==========================================
-# HEADER
+# APP HEADER
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
@@ -86,119 +105,121 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 SIMPLE & DIRECT IMPORT
+# 📥 SMART IMPORT (Logic Fix)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (نسخه ساده)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
-            # 1. Read Excel (Force everything to String)
+            # 1. Read Excel
             up_df = pd.read_excel(uploaded_file, dtype=str).fillna("")
-            up_df.columns = up_df.columns.astype(str).str.strip()
+            # Clean Headers
+            up_df.columns = [normalize_text(c) for c in up_df.columns]
 
-            # 2. Identify Name Column
-            def find_col(cols):
+            # 2. Select Columns
+            def find_col(cols, key):
                 for c in cols:
-                    if 'اسم' in c or 'name' in c.lower(): return c
+                    if key in c or (key == 'name' and 'اسم' in c): return c
                 return cols[0]
             
-            col_name = st.selectbox("ستون نام:", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns)))
+            c1, c2, c3 = st.columns(3)
+            col_name = c1.selectbox("ستون 'نام':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'اسم')))
+            col_city = c2.selectbox("ستون 'شهر':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'شهر')))
+            col_prov = c3.selectbox("ستون 'استان':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'استان')))
 
-            # 3. Index Existing Data
-            # Key = Name, Value = List of {Index, Data}
+            # 3. Build Search Index
+            # Map: Normalized Name -> List of Records
             name_index = {}
             for idx, row in df.iterrows():
-                nm = str(row.get('اسم', '')).strip()
+                nm = normalize_text(row.get('اسم', ''))
                 if nm:
                     if nm not in name_index: name_index[nm] = []
                     name_index[nm].append({'idx': idx + 2, 'data': row})
 
-            # 4. Process Logic
+            # 4. Processing Loop
             rows_to_add = []
             rows_to_update = []
             
-            cnt_add = 0
-            cnt_update = 0
+            cnt_new = 0
+            cnt_merged = 0
 
             for i, row in up_df.iterrows():
-                u_name = str(row[col_name]).strip()
-                if not u_name or u_name.lower() == 'nan': continue
+                # Get Excel Data (Normalized)
+                u_name = normalize_text(row[col_name])
+                u_city = normalize_text(row[col_city])
+                u_prov = normalize_text(row[col_prov])
+                
+                if not u_name: continue
 
-                # Is name in Sheet?
+                # Look for candidates in Sheet
                 candidates = name_index.get(u_name, [])
                 
                 matched_candidate = None
                 
-                if candidates:
-                    # Try to find a COMPATIBLE match to merge with
-                    for cand in candidates:
-                        sheet_row = cand['data']
-                        is_compatible = True
-                        
-                        # Check compatibility for ALL columns
-                        for col in all_headers:
-                            if col == 'اسم': continue
-                            
-                            sheet_val = str(sheet_row.get(col, "")).strip()
-                            excel_val = str(row.get(col, "")).strip() if col in up_df.columns else ""
-                            
-                            # Conflict Rule: If Sheet has value X, and Excel has value Y, and X != Y -> Conflict!
-                            # We only merge if Sheet is Empty OR Sheet matches Excel
-                            if sheet_val != "" and excel_val != "" and sheet_val != excel_val:
-                                is_compatible = False
-                                break
-                        
-                        if is_compatible:
-                            matched_candidate = cand
-                            break
-                
-                # --- DECISION ---
+                # --- LOGIC: Find a Compatible Person ---
+                for cand in candidates:
+                    sheet_data = cand['data']
+                    sheet_city = normalize_text(sheet_data.get('شهر', ''))
+                    sheet_prov = normalize_text(sheet_data.get('استان', ''))
+                    
+                    # 1. Check City Match (Compatible if Sheet is Empty OR Match)
+                    city_match = (sheet_city == "") or (sheet_city == u_city)
+                    # 2. Check Prov Match (Compatible if Sheet is Empty OR Match)
+                    prov_match = (sheet_prov == "") or (sheet_prov == u_prov)
+                    
+                    if city_match and prov_match:
+                        matched_candidate = cand
+                        break # Found the person! Stop searching.
+
                 if matched_candidate:
-                    # MERGE
+                    # === MERGE DATA ===
                     r_idx = matched_candidate['idx']
                     current_data = matched_candidate['data']
                     merged_row = []
-                    changes_found = False
+                    has_updates = False
                     
-                    for col in all_headers:
-                        sheet_val = str(current_data.get(col, "")).strip()
-                        excel_val = str(row.get(col, "")).strip() if col in up_df.columns else ""
+                    for header in all_headers:
+                        sheet_val = normalize_text(current_data.get(header, ""))
                         
-                        # Update only if Sheet is empty and Excel has info
-                        if col == 'اسم':
-                            merged_row.append(u_name)
-                        elif sheet_val == "" and excel_val != "":
+                        # Find Excel Value
+                        excel_val = ""
+                        if header == 'اسم': excel_val = u_name
+                        elif header in up_df.columns: excel_val = normalize_text(row[header])
+                        
+                        # UPDATE IF: Sheet is Empty AND Excel has Data
+                        if sheet_val == "" and excel_val != "":
                             merged_row.append(excel_val)
-                            changes_found = True
+                            has_updates = True
                         else:
                             merged_row.append(sheet_val)
                     
-                    if changes_found:
+                    if has_updates:
                         rows_to_update.append((r_idx, merged_row))
-                        cnt_update += 1
+                        cnt_merged += 1
                 
                 else:
-                    # NO MATCH (or Conflict found) -> ADD NEW
+                    # === ADD NEW PERSON ===
+                    # Name didn't exist OR Name existed but City/Prov conflicted (different person)
                     new_row = []
-                    for col in all_headers:
-                        if col == 'اسم':
+                    for header in all_headers:
+                        if header == 'اسم':
                             new_row.append(u_name)
-                        elif col in up_df.columns:
-                            new_row.append(str(row[col]).strip())
+                        elif header in up_df.columns:
+                            new_row.append(normalize_text(row[header]))
                         else:
                             new_row.append("")
                     rows_to_add.append(new_row)
-                    cnt_add += 1
+                    cnt_new += 1
 
             # 5. Execute
-            if cnt_add > 0 or cnt_update > 0:
-                c1, c2 = st.columns(2)
-                c1.warning(f"🆕 افزودن: {cnt_add}")
-                c2.info(f"🔄 تکمیل: {cnt_update}")
+            if cnt_new > 0 or cnt_merged > 0:
+                c_a, c_b = st.columns(2)
+                c_a.warning(f"🆕 افراد جدید (نام جدید یا شهر متفاوت): {cnt_new}")
+                c_b.info(f"🔄 تکمیل اطلاعات (نام و شهر یکسان): {cnt_merged}")
                 
-                if st.button("🚀 اجرا"):
-                    with st.status("در حال انجام...", expanded=True):
+                if st.button("🚀 اجرای عملیات"):
+                    with st.status("در حال ذخیره...", expanded=True):
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         
@@ -206,6 +227,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه ساده)
                             sheet.append_rows(rows_to_add)
                         
                         if rows_to_update:
+                            # Update row by row to be safe
                             for r_num, r_vals in rows_to_update:
                                 sheet.update(range_name=f"A{r_num}", values=[r_vals])
                                 time.sleep(0.3)
@@ -215,8 +237,8 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه ساده)
                         time.sleep(1)
                         st.rerun()
             else:
-                st.success("✅ داده‌ها یکسان هستند (تغییری لازم نیست).")
-                
+                st.success("✅ داده‌ها کاملاً هماهنگ هستند. (هیچ مورد جدید یا ناقصی یافت نشد)")
+
         except Exception as e:
             st.error(f"Error: {e}")
 
@@ -258,6 +280,7 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
+    # Helper for Inputs
     def draw_inputs(headers_list, container, data_dict, inputs_dict, num_columns=3):
         valid_headers = [h for h in headers_list if h in form_headers]
         if not valid_headers: return
@@ -267,22 +290,32 @@ else:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
 
+    # Form
     with st.form("entry_form", border=True):
         st.markdown(f"### 📄 پرونده: {locked_name}")
         user_inputs = {}
+        
+        # 1. Personal
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs, num_columns=3)
+
+        # 2. Incident (1 Column - Vertical)
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs, num_columns=1)
+
+        # 3. Other
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs, num_columns=2)
-        
-        remaining = [h for h in form_headers if h not in GROUP_PERSONAL+GROUP_INCIDENT+GROUP_OTHER]
+
+        # 4. Catch All
+        used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
+        remaining = [h for h in form_headers if h not in used]
         if remaining:
             st.markdown('<div class="section-header">📂 سایر</div>', unsafe_allow_html=True)
             draw_inputs(remaining, st, current_data, user_inputs, num_columns=3)
 
         st.markdown("---")
+        
         c_sub, c_nul = st.columns([2, 5])
         with c_sub:
             if st.form_submit_button("💾 ثبت نهایی"):
@@ -297,7 +330,7 @@ else:
                     else:
                         sheet.append_row(row_data)
                     
-                    st.toast("ذخیره شد!")
+                    st.toast("ذخیره شد!", icon='🎉')
                     get_data.clear()
                     time.sleep(1)
                     st.session_state.active_name = None
