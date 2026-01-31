@@ -6,7 +6,7 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # 1. Setup & RTL Config
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
+#st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
