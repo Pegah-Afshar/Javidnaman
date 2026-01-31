@@ -9,10 +9,9 @@ import time
 # 1. CONFIGURATION
 # ==========================================
 
-# Personal Info (Will be 3 Columns)
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# Incident Info (Will be 1 Column - VERTICAL LIST)
+# Incident Info (STRICT VERTICAL ORDER)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -24,12 +23,11 @@ GROUP_INCIDENT = [
     "آرامگاه"
 ]
 
-# Other Info (Will be 2 Columns)
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
 
-st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋")
+st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
@@ -65,14 +63,13 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    # Clean Headers
-    df.columns = df.columns.astype(str).str.strip()
+    df.columns = df.columns.astype(str).str.strip() # Clean headers
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
-    st.error("❌ خطا در دریافت اطلاعات. لطفا نام ستون‌ها در گوگل شیت را بررسی کنید.")
+    st.error("❌ خطا در دریافت اطلاعات. لطفا اینترنت را بررسی کنید.")
     st.stop()
 
 def search_names(search_term: str):
@@ -86,9 +83,97 @@ def search_names(search_term: str):
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
-    st.title("📋")
+    st.title("📋 سامانه مدیریت هوشمند")
 with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
+
+# ==========================================
+# 🆕 ADVANCED BULK IMPORT (CHECK NAME + CITY + PROVINCE)
+# ==========================================
+with st.expander("📥 افزودن گروهی با بررسی شهر/استان (Smart Import)"):
+    uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
+    
+    if uploaded_file:
+        try:
+            up_df = pd.read_excel(uploaded_file)
+            up_df.columns = up_df.columns.astype(str).str.strip()
+            
+            # Helper to find default column index based on keywords
+            def find_col_index(columns, keywords):
+                for i, col in enumerate(columns):
+                    if any(k in col for k in keywords):
+                        return i
+                return 0
+
+            # 1. Map Columns
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                col_name = st.selectbox("ستون 'نام' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['اسم', 'name']))
+            with c2:
+                col_city = st.selectbox("ستون 'شهر' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['شهر', 'city']))
+            with c3:
+                col_prov = st.selectbox("ستون 'استان' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
+
+            # 2. Build Database Fingerprints (Name + City + Province)
+            # We create a set of unique combinations already in Google Sheets
+            existing_fingerprints = set()
+            for index, row in df.iterrows():
+                # Normalize: Strip spaces to handle " Tehran " vs "Tehran"
+                f_name = str(row.get('اسم', '')).strip()
+                f_city = str(row.get('شهر', '')).strip()
+                f_prov = str(row.get('استان', '')).strip()
+                existing_fingerprints.add((f_name, f_city, f_prov))
+
+            # 3. Analyze Upload File
+            new_rows_to_add = []
+            
+            for index, row in up_df.iterrows():
+                u_name = str(row[col_name]).strip()
+                u_city = str(row[col_city]).strip()
+                u_prov = str(row[col_prov]).strip()
+                
+                # CHECK: Does this exact combination exist?
+                if (u_name, u_city, u_prov) not in existing_fingerprints:
+                    # It's NEW! (Either new name, OR same name but diff city)
+                    
+                    # Create the row data
+                    new_data_row = []
+                    for header in all_headers:
+                        if header == 'اسم':
+                            new_data_row.append(u_name)
+                        elif header == 'شهر':
+                            new_data_row.append(u_city)
+                        elif header == 'استان':
+                            new_data_row.append(u_prov)
+                        else:
+                            # Try to find matching column in excel, else empty
+                            if header in up_df.columns:
+                                new_data_row.append(str(row[header]))
+                            else:
+                                new_data_row.append("")
+                    
+                    new_rows_to_add.append(new_data_row)
+
+            # 4. Show Results
+            if new_rows_to_add:
+                st.info(f"📊 فایل شما {len(up_df)} ردیف دارد.")
+                st.warning(f"🆕 تعداد {len(new_rows_to_add)} نفر جدید شناسایی شدند (نام جدید یا شهر متفاوت).")
+                
+                if st.button(f"🚀 افزودن {len(new_rows_to_add)} نفر به دیتابیس"):
+                    with st.status("در حال آپلود...", expanded=True) as status:
+                        client = get_connection()
+                        sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+                        sheet.append_rows(new_rows_to_add)
+                        
+                        status.update(label="✅ تمام شد!", state="complete")
+                        get_data.clear()
+                        time.sleep(2)
+                        st.rerun()
+            else:
+                st.success("✅ هیچ داده جدیدی یافت نشد. تمام افراد (با شهر و استان مشابه) قبلاً ثبت شده‌اند.")
+
+        except Exception as e:
+            st.error(f"خطا: {e}")
 
 # ==========================================
 # SCREEN 1: SEARCH
@@ -128,16 +213,13 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # --- UPDATED HELPER: Accepts 'num_columns' ---
+    # --- HELPER FUNCTION ---
     def draw_inputs(headers_list, container, data_dict, inputs_dict, num_columns=3):
         valid_headers = [h for h in headers_list if h in form_headers]
         if not valid_headers: return
         
-        # We create columns based on the requested number
         cols = container.columns(num_columns)
-        
         for i, header in enumerate(valid_headers):
-            # i % num_columns ensures it wraps correctly
             with cols[i % num_columns]:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
@@ -150,20 +232,19 @@ else:
         user_inputs = {}
         drawn_headers = set() 
 
-        # SECTION 1: PERSONAL (3 Columns - Grid)
+        # SECTION 1: PERSONAL (3 cols)
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs, num_columns=3)
 
-        # SECTION 2: INCIDENT (1 Column - STRICT VERTICAL ORDER)
-        # ✅ This ensures strict Top-to-Bottom order as requested
+        # SECTION 2: INCIDENT (1 col - Vertical)
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs, num_columns=1)
 
-        # SECTION 3: OTHER (2 Columns - Balanced)
+        # SECTION 3: OTHER (2 cols)
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs, num_columns=2)
 
-        # SECTION 4: CATCH-ALL
+        # SECTION 4: CATCH-ALL (3 cols)
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
             st.markdown('<div class="section-header">📂 ستون‌های دسته‌بندی نشده</div>', unsafe_allow_html=True)
