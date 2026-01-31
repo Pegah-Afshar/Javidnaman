@@ -39,7 +39,7 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. STATE MANAGEMENT (THE FIX)
+# 2. STATE MANAGEMENT
 # ==========================================
 if 'form_id' not in st.session_state:
     st.session_state.form_id = str(uuid.uuid4())
@@ -50,9 +50,7 @@ if 'active_name' not in st.session_state:
 def reset_app():
     """Forces a complete reset of the form and search box"""
     st.session_state.active_name = None
-    st.session_state.form_id = str(uuid.uuid4()) # Change ID to force empty boxes
-    
-    # Nuke the search box state
+    st.session_state.form_id = str(uuid.uuid4())
     if "search_box_main" in st.session_state:
         del st.session_state["search_box_main"]
 
@@ -192,15 +190,37 @@ with c_tools_3:
                 if rows_to_add or rows_to_update:
                     st.info(f"➕ {len(rows_to_add)} | 🔄 {len(rows_to_update)}")
                     if st.button("🚀 اجرا"):
-                        sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-                        if rows_to_add: sheet.append_rows(rows_to_add)
-                        if rows_to_update:
-                            batch = [{'range': f"A{r}", 'values': [v]} for r, v in rows_to_update]
-                            sheet.batch_update(batch)
-                        st.success("انجام شد")
-                        get_data.clear()
-                        time.sleep(1)
-                        st.rerun()
+                        try:
+                            sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+                            
+                            # SAFETY CHECK: If we are updating rows that don't exist
+                            max_row_idx = 0
+                            if rows_to_update:
+                                max_row_idx = max([r[0] for r in rows_to_update])
+                            
+                            # If local cache expects rows > actual sheet size, Sync error.
+                            if max_row_idx > sheet.row_count:
+                                st.warning(f"⚠️ خطای هماهنگی: تعداد ردیف‌ها تغییر کرده است (Cache={max_row_idx}, Sheet={sheet.row_count}). در حال رفرش...")
+                                get_data.clear()
+                                time.sleep(2)
+                                st.rerun()
+                            
+                            if rows_to_add: sheet.append_rows(rows_to_add)
+                            if rows_to_update:
+                                batch = [{'range': f"A{r}", 'values': [v]} for r, v in rows_to_update]
+                                sheet.batch_update(batch)
+                            
+                            st.success("انجام شد")
+                            get_data.clear()
+                            time.sleep(1)
+                            st.rerun()
+
+                        except gspread.exceptions.APIError as api_err:
+                            if "exceed grid limits" in str(api_err):
+                                st.error("❌ خطای ناهماهنگی دیتا. لطفاً دکمه 'رفرش' را بزنید و مجدد تلاش کنید.")
+                                get_data.clear()
+                            else:
+                                st.error(f"API Error: {api_err}")
                 else:
                     st.success("✅ هماهنگ")
             except Exception as e:
@@ -217,39 +237,33 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-# --- SCREEN 1: SEARCH ---
 if st.session_state.active_name is None:
-    # Use standard container
+    # --- SEARCH VIEW ---
     with st.container():
         c_head1, c_head2 = st.columns([4, 1])
         with c_head1: st.subheader("🔍 جستجوی پرونده")
         with c_head2: st.caption(f"تعداد: {len(existing_names)}")
         
-        # SEARCH BOX
-        # We check if 'search_box_main' is in session state to handle resets
         selected_value = st_searchbox(
             search_names, 
             key="search_box_main", 
-            placeholder="نام را تایپ کنید (اینتر بزنید)..."
+            placeholder="نام را تایپ کنید..."
         )
-        
         if selected_value:
             st.session_state.active_name = selected_value
             st.rerun()
-
-# --- SCREEN 2: FORM ---
 else:
+    # --- FORM VIEW ---
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
-    # Header
     c_status, c_close = st.columns([5, 1])
     with c_status:
         if is_edit_mode: st.success(f"✏️ ویرایش: **{locked_name}**")
         else: st.warning(f"🆕 جدید: **{locked_name}**")
     with c_close:
         if st.button("❌", use_container_width=True):
-            reset_app() # Force Clean Reset
+            reset_app()
             st.rerun()
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
@@ -257,15 +271,12 @@ else:
     def draw_section(title, headers, cols=3):
         valid = [h for h in headers if h in form_headers]
         if not valid: return
-        
         st.markdown(f'<div class="custom-header">{title}</div>', unsafe_allow_html=True)
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i % cols]:
                 val = current_data.get(h, "")
                 if h == 'سن': val = format_age(val)
-                
-                # 🔥 THE FIX: Use form_id in the key to force fresh boxes
                 unique_key = f"{h}_{st.session_state.form_id}"
                 st.text_input(h, value=str(val), key=unique_key)
 
@@ -285,10 +296,8 @@ else:
                 sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 row_data = []
                 for h in all_headers:
-                    # Retrieve using the UNIQUE key
                     unique_key = f"{h}_{st.session_state.form_id}"
                     val = st.session_state.get(unique_key, "")
-                    
                     if h == 'اسم': row_data.append(locked_name)
                     elif h == 'سن': row_data.append(format_age(val))
                     else: row_data.append(val)
@@ -302,8 +311,6 @@ else:
                 st.toast("اطلاعات ذخیره شد.", icon='✅')
                 get_data.clear()
                 time.sleep(1)
-                
-                # 🔥 FORCE RESET EVERYTHING
                 reset_app()
                 st.rerun()
             except Exception as e:
