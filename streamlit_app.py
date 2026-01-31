@@ -6,24 +6,24 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # ==========================================
-# 1. CONFIGURATION
+# 1. CONFIGURATION (The Control Center)
 # ==========================================
-# ✅ CHANGE: No fields are forced anymore. You can save empty records.
-REQUIRED_FIELDS = [] 
-
-# We keep this just to ensure 'Age' is a number IF typed. 
-# If left empty, it will be ignored (which is what you want).
+# Define which columns MUST be filled
+REQUIRED_FIELDS = ["سن", "شهر"] 
+# Define which columns MUST be numbers
 NUMERIC_FIELDS = ["سن", "سال تولد"]
 
 st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
 
-# CSS Styles
+# Professional CSS for RTL and Cards
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
     label, input, textarea, .stSelectbox, .stMarkdown, .stToast { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; }
     .stButton button:hover { background-color: #1557b0; }
-    .st-emotion-cache-16idsys p { display: none; } 
+    .st-emotion-cache-16idsys p { display: none; } /* Hide search label */
+    
+    /* Card Style for Form */
     [data-testid="stForm"] { border: 1px solid #ddd; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
 </style>""", unsafe_allow_html=True)
 
@@ -41,29 +41,34 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+    # Get all records as strings to avoid Type Errors
     return pd.DataFrame(sheet.get_all_records(expected_headers=[]))
 
 # ==========================================
 # 3. HELPER FUNCTIONS
 # ==========================================
 def validate_inputs(inputs):
-    """Checks data validity. Allows empty fields now."""
+    """Checks if data is valid before sending to Google"""
     errors = []
     
-    # We removed the loop for REQUIRED_FIELDS so nothing is mandatory.
+    # Check Required Fields
+    for field in REQUIRED_FIELDS:
+        if field in inputs and not inputs[field].strip():
+            errors.append(f"⚠️ فیلد **{field}** اجباری است.")
             
-    # Check Numeric Fields ONLY IF value is provided
+    # Check Numeric Fields
     for field in NUMERIC_FIELDS:
-        # We check "if inputs[field].strip()" -> This means "If the user actually typed something"
         if field in inputs and inputs[field].strip():
             if not inputs[field].strip().isdigit():
-                errors.append(f"⛔ فیلد **{field}** باید فقط عدد باشد (در صورت وارد کردن).")
+                errors.append(f"⛔ فیلد **{field}** باید فقط عدد باشد.")
     
     return errors
 
 # ==========================================
 # 4. MAIN APP LOGIC
 # ==========================================
+
+# Initialize State
 if 'active_name' not in st.session_state:
     st.session_state.active_name = None
 
@@ -74,7 +79,7 @@ try:
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
-    st.error("خطا در بارگذاری داده‌ها.")
+    st.error("خطا در بارگذاری داده‌ها. لطفا اینترنت را چک کنید.")
     st.stop()
 
 def search_names(search_term: str):
@@ -91,7 +96,7 @@ st.title("📋 سامانه مدیریت هوشمند")
 # SCREEN 1: SEARCH MODE
 # ------------------------------------------
 if st.session_state.active_name is None:
-    st.info("👇 نام را جستجو کنید یا نام جدید بنویسید")
+    st.info("👇 برای شروع، نام را جستجو کنید یا نام جدید بنویسید")
     
     selected_value = st_searchbox(
         search_names,
@@ -129,29 +134,33 @@ else:
             st.session_state.active_name = None
             st.rerun()
 
+    # Load Existing Data
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
+    # The Form
     with st.form("entry_form", border=True):
-        st.markdown(f"### 📄 اطلاعات پرونده: {locked_name}")
+        st.markdown(f"### 📄 اطلاعات مربوط به {locked_name}")
         st.markdown("---")
         
-        cols = st.columns(3) 
+        cols = st.columns(3) # Grid layout
         user_inputs = {}
 
         for i, header in enumerate(form_headers):
             with cols[i % 3]:
                 val = current_data.get(header, "")
-                # No "*" asterisk anymore since nothing is required
-                user_inputs[header] = st.text_input(header, value=str(val), key=f"input_{header}")
+                # Add a star * to label if required
+                label = f"{header} *" if header in REQUIRED_FIELDS else header
+                user_inputs[header] = st.text_input(label, value=str(val), key=f"input_{header}")
 
         st.markdown("---")
         
+        # Action Buttons
         c_submit, c_space = st.columns([2, 5])
         with c_submit:
             submitted = st.form_submit_button("💾 ثبت و ذخیره نهایی")
 
         if submitted:
-            # 1. Validation (Now very lenient)
+            # 1. Validation Check
             validation_errors = validate_inputs(user_inputs)
             
             if validation_errors:
@@ -169,13 +178,15 @@ else:
                                 break
                     
                     if not changes_detected:
-                        st.info("ℹ️ تغییری اعمال نشده است.")
+                        st.info("ℹ️ هیچ تغییری اعمال نشده است.")
                         time.sleep(1.5)
+                        # Cleanup Logic even if no change
                         if "search_box_main" in st.session_state: del st.session_state["search_box_main"]
                         st.session_state.active_name = None
                         st.rerun()
                     else:
-                        with st.status("📡 در حال ارسال به سرور...", expanded=True) as status:
+                        # 2. Visual Status Indicator
+                        with st.status("📡 در حال ارتباط با سرور...", expanded=True) as status:
                             client = get_connection()
                             sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                             
@@ -184,9 +195,10 @@ else:
                                 if header == 'اسم':
                                     final_row.append(locked_name)
                                 else:
+                                    # Force string to prevent formatting issues
                                     final_row.append(str(user_inputs.get(header, "")))
                             
-                            status.write("✍️ ثبت در پایگاه داده...")
+                            status.write("✍️ در حال نوشتن در گوگل شیت...")
                             
                             if is_edit_mode:
                                 cell = sheet.find(locked_name)
@@ -194,12 +206,14 @@ else:
                             else:
                                 sheet.append_row(final_row)
                             
-                            get_data.clear() 
-                            status.update(label="✅ عملیات موفقیت‌آمیز بود!", state="complete", expanded=False)
+                            get_data.clear() # Clear Cache
+                            status.update(label="✅ عملیات با موفقیت انجام شد!", state="complete", expanded=False)
                         
-                        st.toast("پرونده ذخیره شد", icon='🎉')
+                        # 3. Final Success Message
+                        st.toast("اطلاعات ذخیره شد", icon='🎉')
                         
-                        time.sleep(1)
+                        # 4. Cleanup & Reset
+                        time.sleep(1) # Short pause to show the green checkmark
                         
                         for header in form_headers:
                             if f"input_{header}" in st.session_state: del st.session_state[f"input_{header}"]
