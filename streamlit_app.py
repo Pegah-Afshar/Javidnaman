@@ -150,4 +150,48 @@ else:
                     if is_edit_mode:
                         changes_detected = False
                         for header in form_headers:
-                            if str(
+                            if str(current_data.get(header, "")).strip() != user_inputs.get(header, "").strip():
+                                changes_detected = True
+                                break
+                    
+                    if not changes_detected:
+                        st.info("ℹ️ تغییری اعمال نشده است.")
+                        time.sleep(1.5)
+                        st.session_state.active_name = None
+                        st.rerun()
+                    else:
+                        with st.status("📡 در حال ارسال به سرور...", expanded=True) as status:
+                            client = get_connection()
+                            sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+                            
+                            final_row = []
+                            for header in all_headers:
+                                if header == 'اسم':
+                                    final_row.append(locked_name)
+                                else:
+                                    final_row.append(str(user_inputs.get(header, "")))
+                            
+                            status.write("✍️ ثبت در پایگاه داده...")
+                            
+                            if is_edit_mode:
+                                cell = sheet.find(locked_name)
+                                sheet.update(range_name=f"A{cell.row}", values=[final_row])
+                            else:
+                                sheet.append_row(final_row)
+                            
+                            get_data.clear() 
+                            status.update(label="✅ عملیات موفقیت‌آمیز بود!", state="complete", expanded=False)
+                        
+                        st.toast("پرونده ذخیره شد", icon='🎉')
+                        time.sleep(1)
+                        
+                        # Cleanup Inputs
+                        for header in form_headers:
+                            if f"input_{header}" in st.session_state: del st.session_state[f"input_{header}"]
+                        
+                        # Reset Name -> Takes you back to empty text box
+                        st.session_state.active_name = None
+                        st.rerun()
+                        
+                except Exception as e:
+                    st.error(f"❌ خطای سیستمی: {e}")
