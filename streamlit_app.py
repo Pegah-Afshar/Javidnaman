@@ -10,7 +10,7 @@ import time
 # ==========================================
 
 # ✅ UPDATED GROUPS BASED ON YOUR REQUEST
-GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "نام پدر"]
+GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت"]
 GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان", "شهر", "خیابان", "مکان دقیق", "نحوه کشته شدن", "مزار"]
 GROUP_OTHER    = ["شبکه های اجتماعی", "بستگان", "توضیحات تکمیلی"]
 
@@ -76,16 +76,16 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-st.title("📋 سامانه مدیریت هوشمند")
+#st.title("📋 سامانه مدیریت هوشمند")
 
 # ==========================================
 # SCREEN 1: SEARCH
 # ==========================================
 if st.session_state.active_name is None:
-    st.info("👇 نام را جستجو کنید یا نام جدید بنویسید و **اینتر بزنید**")
+    st.info("👇نام **")
     
     selected_value = st_searchbox(
-        search_names, key="search_box_main", placeholder="نام را تایپ کنید..."
+        search_names, key="search_box_main", placeholder="..."
     )
 
     if selected_value:
