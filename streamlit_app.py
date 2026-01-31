@@ -11,8 +11,7 @@ import time
 
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# ✅ UPDATED: The form will generate boxes in EXACTLY this order.
-# (Right to Left, Top to Bottom)
+# ✅ ORDER IS: Right -> Middle -> Left (Row 1), then Right -> Middle -> Left (Row 2)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -28,7 +27,7 @@ GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان
 
 NUMERIC_FIELDS = ["سن"]
 
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
+st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
@@ -64,8 +63,10 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
+    # ⚠️ CLEANUP: Remove extra spaces from headers to ensure matching works
+    df.columns = df.columns.astype(str).str.strip()
+    
     all_headers = df.columns.tolist()
-    # Note: 'اسم' is excluded from form_headers
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
@@ -79,13 +80,12 @@ def search_names(search_term: str):
     return matches
 
 # ==========================================
-# HEADER SECTION
+# HEADER
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
-    st.title("📋")
+    st.title("📋 ")
 with c_count:
-    # Total Row Counter
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
@@ -126,14 +126,17 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # --- HELPER FUNCTION (Respects List Order) ---
+    # --- HELPER FUNCTION (Forces Order) ---
     def draw_inputs(headers_list, container, data_dict, inputs_dict):
-        # This list comprehension PRESERVES the order of 'headers_list'
+        # 1. Filter: Check which headers actually exist in the Google Sheet
+        # The list comprehension PRESERVES the user's order from 'headers_list'
         valid_headers = [h for h in headers_list if h in form_headers]
+        
         if not valid_headers: return
         
         cols = container.columns(3)
         for i, header in enumerate(valid_headers):
+            # i % 3 determines column: 0=Right, 1=Middle, 2=Left (in RTL)
             with cols[i % 3]:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
@@ -150,7 +153,7 @@ else:
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs)
 
-        # SECTION 2: INCIDENT
+        # SECTION 2: INCIDENT (Exact Order Requested)
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs)
 
@@ -159,10 +162,11 @@ else:
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs)
 
         # SECTION 4: CATCH-ALL
+        # If a box appears here, it means the spelling in Python didn't match the Google Sheet
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
             st.markdown('<div class="section-header">📂 ستون‌های دسته‌بندی نشده</div>', unsafe_allow_html=True)
-            st.caption("این ستون‌ها در لیست‌های بالا (کد) پیدا نشدند. لطفاً املای آن‌ها را در کد اصلاح کنید.")
+            st.caption("توجه: این ستون‌ها به دلیل عدم تطابق نام، در گروه‌های بالا قرار نگرفتند:")
             draw_inputs(remaining_headers, st, current_data, user_inputs)
 
         st.markdown("---")
@@ -172,7 +176,6 @@ else:
             submitted = st.form_submit_button("💾 ثبت نهایی")
 
         if submitted:
-            # Simple numeric check
             validation_errors = []
             for field in NUMERIC_FIELDS:
                 if field in user_inputs and user_inputs[field].strip():
