@@ -30,7 +30,7 @@ st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide"
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
-    label, input, textarea, .stSelectbox, .stMarkdown, .stToast, .stExpander, .stMetric { direction: rtl !important; text-align: right !important; }
+    label, input, textarea, .stSelectbox, .stMarkdown, .stToast, .stExpander, .stMetric, .stAlert { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; }
     .stButton button:hover { background-color: #1557b0; }
     .st-emotion-cache-16idsys p { display: none; } 
@@ -87,9 +87,9 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 INTELLIGENT IMPORT (Robust Empty Check)
+# 📥 INTELLIGENT IMPORT (Robust & Diagnostics)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)"):
+with st.expander("📥 افزودن و تکمیل گروهی (با گزارش ستون‌ها)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
@@ -99,12 +99,41 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
             up_df.columns = up_df.columns.astype(str).str.strip()
             up_df = up_df.astype(str)
 
+            # --- DIAGNOSTIC REPORT ---
+            # Create a map to handle Case Insensitive matching (e.g. "Age" matches "age")
+            # Key = Lowercase Clean Name, Value = Real Excel Column Name
+            excel_col_map = {c.lower().strip(): c for c in up_df.columns}
+            
+            matched_cols = []
+            missing_cols = []
+            
+            for h in all_headers:
+                if h.lower().strip() in excel_col_map:
+                    matched_cols.append(h)
+                else:
+                    missing_cols.append(h)
+            
+            st.markdown("##### 📊 گزارش وضعیت ستون‌ها:")
+            c_ok, c_bad = st.columns(2)
+            with c_ok:
+                if matched_cols:
+                    st.success(f"✅ ستون‌های شناسایی شده ({len(matched_cols)}):")
+                    st.caption(", ".join(matched_cols))
+            with c_bad:
+                if missing_cols:
+                    st.error(f"❌ ستون‌هایی که در اکسل پیدا نشدند ({len(missing_cols)}):")
+                    st.caption("این اطلاعات کپی نخواهند شد مگر اینکه نام ستون در اکسل را دقیقاً مشابه لیست زیر کنید:")
+                    st.caption(", ".join(missing_cols))
+
+            st.markdown("---")
+
+            # 2. Select Key Columns
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords): return i
                 return 0
 
-            st.info("لطفاً ستون‌های کلیدی را مشخص کنید:")
+            st.info("لطفاً ستون‌های کلیدی را تأیید کنید:")
             c1, c2, c3 = st.columns(3)
             with c1:
                 col_name = st.selectbox("ستون 'نام':", up_df.columns, index=find_col_index(up_df.columns, ['اسم', 'name']))
@@ -113,18 +142,17 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
             with c3:
                 col_prov = st.selectbox("ستون 'استان':", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
 
-            # Helper: Is this cell TRULY empty? (Handles spaces, nan, etc.)
+            # Helper: Is cell TRULY empty?
             def is_empty(val):
                 if not val: return True
                 s = str(val).strip().lower()
-                return s == "" or s == "nan" or s == "none"
+                return s == "" or s == "nan" or s == "none" or s == "-"
 
             # 3. Build Name Index
             name_index = {}
             for index, row in df.iterrows():
                 f_name = str(row.get('اسم', '')).strip()
-                if f_name not in name_index:
-                    name_index[f_name] = []
+                if f_name not in name_index: name_index[f_name] = []
                 name_index[f_name].append({'row_idx': index + 2, 'data': row})
 
             # 4. Process Excel Rows
@@ -138,17 +166,15 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                 
                 if is_empty(u_name): continue
 
-                # Is this name in our sheet?
+                # Look for compatible matches in Sheet
                 candidate_list = name_index.get(u_name, [])
-                
                 matched_record = None
                 
-                # SEARCH for a "Compatible" record
                 for candidate in candidate_list:
                     sheet_city = str(candidate['data'].get('شهر', '')).strip()
                     sheet_prov = str(candidate['data'].get('استان', '')).strip()
                     
-                    # LOGIC: Compatible if Sheet location is EMPTY or MATCHES Excel (Case Insensitive)
+                    # MATCH LOGIC: Compatible if Sheet location is Empty OR Matches Excel
                     city_ok = is_empty(sheet_city) or (sheet_city.lower() == u_city.lower())
                     prov_ok = is_empty(sheet_prov) or (sheet_prov.lower() == u_prov.lower())
                     
@@ -156,8 +182,9 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                         matched_record = candidate
                         break 
                 
+                # --- PREPARE DATA ---
                 if matched_record:
-                    # --- UPDATE (MERGE) ---
+                    # MERGE (Fill gaps)
                     current_sheet_data = matched_record['data']
                     row_number = matched_record['row_idx']
                     merged_row = []
@@ -166,35 +193,43 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                     for header in all_headers:
                         current_val = str(current_sheet_data.get(header, "")).strip()
                         
-                        # Get value from Excel
+                        # Find Excel Value (Case Insensitive Search)
                         excel_val = ""
+                        h_lower = header.lower().strip()
+                        
                         if header == 'اسم': excel_val = u_name
                         elif header == 'شهر': excel_val = u_city
                         elif header == 'استان': excel_val = u_prov
-                        elif header in up_df.columns: excel_val = str(row[header]).strip()
+                        elif h_lower in excel_col_map: 
+                            real_col = excel_col_map[h_lower]
+                            excel_val = str(row[real_col]).strip()
                         
-                        # OVERWRITE LOGIC: 
-                        # If Sheet is effectively EMPTY AND Excel has data -> Update
+                        # OVERWRITE LOGIC: If Sheet is Empty AND Excel has data
                         if is_empty(current_val) and not is_empty(excel_val):
                             merged_row.append(excel_val)
                             has_new_info = True
                         else:
-                            # Keep existing Sheet data
                             merged_row.append(current_val)
                     
                     if has_new_info:
                         rows_to_update.append((row_number, merged_row))
 
                 else:
-                    # --- ADD NEW ---
+                    # ADD NEW
                     new_row = []
                     for header in all_headers:
-                        if header == 'اسم': new_row.append(u_name)
-                        elif header == 'شهر': new_row.append(u_city)
-                        elif header == 'استان': new_row.append(u_prov)
-                        else:
-                            val = str(row[header]).strip() if header in up_df.columns else ""
-                            new_row.append(val)
+                        # Find Excel Value (Case Insensitive Search)
+                        excel_val = ""
+                        h_lower = header.lower().strip()
+                        
+                        if header == 'اسم': excel_val = u_name
+                        elif header == 'شهر': excel_val = u_city
+                        elif header == 'استان': excel_val = u_prov
+                        elif h_lower in excel_col_map: 
+                            real_col = excel_col_map[h_lower]
+                            excel_val = str(row[real_col]).strip()
+                        
+                        new_row.append(excel_val)
                     rows_to_append.append(new_row)
 
             # 5. Execute
@@ -210,12 +245,10 @@ with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         
-                        # 1. Add New
                         if rows_to_append:
                             status.write("✍️ افزودن ردیف‌های جدید...")
                             sheet.append_rows(rows_to_append)
                         
-                        # 2. Update Existing
                         if rows_to_update:
                             status.write("🔄 تکمیل اطلاعات ناقص...")
                             if len(rows_to_update) > 50: st.caption("لطفاً صبر کنید...")
