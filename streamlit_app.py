@@ -81,7 +81,7 @@ def search_names(search_term: str):
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
-    st.title("📋 سامانه مدیریت هوشمند")
+    st.title("📋")
 with c_count:
     # ✅ Total Row Counter
     st.metric(label="تعداد کل", value=len(existing_names))
