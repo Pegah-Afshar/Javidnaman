@@ -2,24 +2,26 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
+from streamlit_searchbox import st_searchbox
 import time
 
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
+# No mandatory fields
 REQUIRED_FIELDS = [] 
 NUMERIC_FIELDS = ["سن", "سال تولد"]
 
 st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
 
+# CSS: RTL, Cards, and hiding the search label
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
     label, input, textarea, .stSelectbox, .stMarkdown, .stToast { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; }
     .stButton button:hover { background-color: #1557b0; }
+    .st-emotion-cache-16idsys p { display: none; } /* Hide searchbox label to keep UI clean */
     [data-testid="stForm"] { border: 1px solid #ddd; padding: 20px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    /* Highlight the similarity warning */
-    .similar-names-box { background-color: #fff3cd; padding: 10px; border-radius: 5px; border: 1px solid #ffeeba; margin-bottom: 10px; color: #856404; }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
@@ -36,18 +38,11 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+    # Get all records as strings to prevent errors
     return pd.DataFrame(sheet.get_all_records(expected_headers=[]))
 
-def validate_inputs(inputs):
-    errors = []
-    for field in NUMERIC_FIELDS:
-        if field in inputs and inputs[field].strip():
-            if not inputs[field].strip().isdigit():
-                errors.append(f"⛔ فیلد **{field}** باید فقط عدد باشد.")
-    return errors
-
 # ==========================================
-# 3. MAIN APP LOGIC
+# 3. LOGIC & STATE
 # ==========================================
 if 'active_name' not in st.session_state:
     st.session_state.active_name = None
@@ -58,69 +53,75 @@ try:
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
-    st.error("خطا در بارگذاری داده‌ها.")
+    st.error("خطا در اتصال به اینترنت.")
     st.stop()
+
+def search_names(search_term: str):
+    # 1. If empty, show full list
+    if not search_term:
+        return existing_names
+    
+    # 2. Find matches
+    matches = [n for n in existing_names if search_term in n]
+    
+    # 3. CRITICAL: Add the user's typed name to the VERY TOP
+    # This ensures that if they type "New Name" and hit Enter, it selects this option.
+    if search_term not in matches:
+        matches.insert(0, search_term)
+        
+    return matches
 
 st.title("📋 سامانه مدیریت هوشمند")
 
-# ------------------------------------------
-# SCREEN 1: SPEED ENTRY (TEXT INPUT)
-# ------------------------------------------
+# ==========================================
+# SCREEN 1: SEARCH (DROPDOWN MODE)
+# ==========================================
 if st.session_state.active_name is None:
-    st.info("👇 نام را بنویسید و **اینتر (Enter)** بزنید. (نیازی به کلیک نیست)")
+    st.info("👇 نام را جستجو کنید (انتخاب از لیست) یا نام جدید بنویسید و **اینتر بزنید**")
     
-    # Replaced SearchBox with standard TextInput for speed
-    name_input = st.text_input("نام شخص:", key="name_entry_box", placeholder="مثال: علی رضایی")
+    # We use st_searchbox to get the Dropdown functionality back
+    selected_value = st_searchbox(
+        search_names,
+        key="search_box_main",
+        placeholder="نام را تایپ کنید..."
+    )
 
-    if name_input:
-        # Immediately Lock and Rerun when Enter is pressed
-        st.session_state.active_name = name_input
+    if selected_value:
+        st.session_state.active_name = selected_value
         st.rerun()
 
-# ------------------------------------------
-# SCREEN 2: FORM MODE
-# ------------------------------------------
+# ==========================================
+# SCREEN 2: ENTRY FORM
+# ==========================================
 else:
     locked_name = st.session_state.active_name
-    
-    # 1. Check if Exact Match Exists
     is_edit_mode = locked_name in existing_names
     
-    # 2. Check for SIMILAR names (Partial Match)
-    # This helps prevents duplicates like "Ali" vs "Ali Reza"
-    similar_names = [n for n in existing_names if locked_name in n and locked_name != n]
-
-    # Top Bar
+    # Header
     c_info, c_btn = st.columns([6, 1])
     with c_info:
         if is_edit_mode:
-            st.success(f"✏️ در حال ویرایش پرونده: **{locked_name}**")
+            st.success(f"✏️ ویرایش: **{locked_name}**")
         else:
-            st.warning(f"🆕 ایجاد پرونده جدید: **{locked_name}**")
+            st.warning(f"🆕 ثبت جدید: **{locked_name}**")
     
     with c_btn:
-        if st.button("❌ برگشت"):
-            # Cleanup
+        if st.button("❌ انصراف"):
+            # Cleanup Inputs
             for header in form_headers:
                 if f"input_{header}" in st.session_state: del st.session_state[f"input_{header}"]
+            # Cleanup Search Memory
+            if "search_box_main" in st.session_state: del st.session_state["search_box_main"]
+            
             st.session_state.active_name = None
             st.rerun()
 
-    # ⚠️ SIMILARITY WARNING SYSTEM
-    # If we are creating a new person, but similar names exist, warn the user!
-    if not is_edit_mode and similar_names:
-        with st.expander(f"⚠️ توجه: {len(similar_names)} نام مشابه پیدا شد! (کلیک برای مشاهده)", expanded=True):
-            st.markdown(f"آیا منظور شما یکی از افراد زیر بود؟")
-            st.write(", ".join([f"**{n}**" for n in similar_names]))
-            st.markdown("---")
-            st.caption("اگر نام مورد نظر شما در لیست بالا نیست، فرم زیر را پر کنید.")
-
-    # Load Data (if Edit) or Empty (if New)
+    # Data Prep
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # The Form
+    # Form
     with st.form("entry_form", border=True):
-        st.markdown(f"### 📄 اطلاعات پرونده: {locked_name}")
+        st.markdown(f"### 📄 مشخصات: {locked_name}")
         st.markdown("---")
         
         cols = st.columns(3) 
@@ -133,19 +134,23 @@ else:
 
         st.markdown("---")
         
-        c_submit, c_space = st.columns([2, 5])
-        with c_submit:
-            # We use on_click callback to handle the save logic cleanly
-            submitted = st.form_submit_button("💾 ثبت و ذخیره نهایی")
+        c_sub, c_nul = st.columns([2, 5])
+        with c_sub:
+            submitted = st.form_submit_button("💾 ثبت نهایی")
 
         if submitted:
-            validation_errors = validate_inputs(user_inputs)
+            # Simple numeric check only
+            validation_errors = []
+            for field in NUMERIC_FIELDS:
+                if field in user_inputs and user_inputs[field].strip():
+                    if not user_inputs[field].strip().isdigit():
+                        validation_errors.append(f"⛔ فیلد **{field}** باید عدد باشد.")
             
             if validation_errors:
-                for err in validation_errors:
-                    st.error(err)
+                for err in validation_errors: st.error(err)
             else:
                 try:
+                    # Check Changes
                     changes_detected = True
                     if is_edit_mode:
                         changes_detected = False
@@ -155,12 +160,15 @@ else:
                                 break
                     
                     if not changes_detected:
-                        st.info("ℹ️ تغییری اعمال نشده است.")
+                        st.info("ℹ️ تغییری داده نشد.")
                         time.sleep(1.5)
+                        # Reset
+                        if "search_box_main" in st.session_state: del st.session_state["search_box_main"]
                         st.session_state.active_name = None
                         st.rerun()
                     else:
-                        with st.status("📡 در حال ارسال به سرور...", expanded=True) as status:
+                        # Save
+                        with st.status("📡 در حال ذخیره...", expanded=True) as status:
                             client = get_connection()
                             sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                             
@@ -171,8 +179,6 @@ else:
                                 else:
                                     final_row.append(str(user_inputs.get(header, "")))
                             
-                            status.write("✍️ ثبت در پایگاه داده...")
-                            
                             if is_edit_mode:
                                 cell = sheet.find(locked_name)
                                 sheet.update(range_name=f"A{cell.row}", values=[final_row])
@@ -180,18 +186,18 @@ else:
                                 sheet.append_row(final_row)
                             
                             get_data.clear() 
-                            status.update(label="✅ عملیات موفقیت‌آمیز بود!", state="complete", expanded=False)
+                            status.update(label="✅ انجام شد!", state="complete", expanded=False)
                         
-                        st.toast("پرونده ذخیره شد", icon='🎉')
+                        st.toast("ذخیره شد", icon='🎉')
                         time.sleep(1)
                         
-                        # Cleanup Inputs
+                        # Full Reset
                         for header in form_headers:
                             if f"input_{header}" in st.session_state: del st.session_state[f"input_{header}"]
+                        if "search_box_main" in st.session_state: del st.session_state["search_box_main"]
                         
-                        # Reset Name -> Takes you back to empty text box
                         st.session_state.active_name = None
                         st.rerun()
                         
                 except Exception as e:
-                    st.error(f"❌ خطای سیستمی: {e}")
+                    st.error(f"❌ خطا: {e}")
