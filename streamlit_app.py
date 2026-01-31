@@ -11,7 +11,6 @@ import time
 
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# Exact order you requested
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -40,21 +39,14 @@ st.markdown("""<style>
 # 2. CORE FUNCTIONS
 # ==========================================
 
-# 🟢 CRITICAL FIX: Normalize Persian Text
-# This ensures "ي" becomes "ی" so names match correctly
 def normalize_text(text):
+    """Standardizes text to ensure accurate matching"""
     if pd.isna(text) or text is None:
         return ""
     text = str(text).strip()
-    
-    # Replace Arabic characters with Persian
-    text = text.replace("ي", "ی")
-    text = text.replace("ك", "ک")
-    
-    # Handle "nan" string from Excel
+    text = text.replace("ي", "ی").replace("ك", "ک")
     if text.lower() in ["nan", "none", "null", "-", ""]:
         return ""
-    
     return text
 
 @st.cache_resource
@@ -68,7 +60,7 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-    # Get all records as string to prevent type errors
+    # Get all records as strings
     return pd.DataFrame(sheet.get_all_records(expected_headers=[]))
 
 # ==========================================
@@ -79,14 +71,13 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    # Normalize headers
     df.columns = [normalize_text(c) for c in df.columns]
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [normalize_text(x) for x in df['اسم'].tolist() if normalize_text(x)]
 except Exception as e:
-    st.error(f"❌ خطا در دریافت اطلاعات: {e}")
+    st.error(f"❌ خطا: {e}")
     st.stop()
 
 def search_names(search_term: str):
@@ -105,16 +96,15 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 SMART IMPORT (Logic Fix)
+# 📥 SMART MERGE (FIXED LOGIC)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
             # 1. Read Excel
             up_df = pd.read_excel(uploaded_file, dtype=str).fillna("")
-            # Clean Headers
             up_df.columns = [normalize_text(c) for c in up_df.columns]
 
             # 2. Select Columns
@@ -128,8 +118,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
             col_city = c2.selectbox("ستون 'شهر':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'شهر')))
             col_prov = c3.selectbox("ستون 'استان':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'استان')))
 
-            # 3. Build Search Index
-            # Map: Normalized Name -> List of Records
+            # 3. Build Index of Existing Data
             name_index = {}
             for idx, row in df.iterrows():
                 nm = normalize_text(row.get('اسم', ''))
@@ -157,23 +146,26 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
                 
                 matched_candidate = None
                 
-                # --- LOGIC: Find a Compatible Person ---
+                # --- MATCHING LOGIC ---
                 for cand in candidates:
                     sheet_data = cand['data']
                     sheet_city = normalize_text(sheet_data.get('شهر', ''))
                     sheet_prov = normalize_text(sheet_data.get('استان', ''))
                     
-                    # 1. Check City Match (Compatible if Sheet is Empty OR Match)
-                    city_match = (sheet_city == "") or (sheet_city == u_city)
-                    # 2. Check Prov Match (Compatible if Sheet is Empty OR Match)
-                    prov_match = (sheet_prov == "") or (sheet_prov == u_prov)
+                    # RELAXED CHECK:
+                    # They match if:
+                    # 1. Cities are identical OR one of them is empty
+                    # 2. AND Provinces are identical OR one of them is empty
                     
-                    if city_match and prov_match:
+                    city_compatible = (sheet_city == u_city) or (sheet_city == "") or (u_city == "")
+                    prov_compatible = (sheet_prov == u_prov) or (sheet_prov == "") or (u_prov == "")
+                    
+                    if city_compatible and prov_compatible:
                         matched_candidate = cand
-                        break # Found the person! Stop searching.
+                        break 
 
                 if matched_candidate:
-                    # === MERGE DATA ===
+                    # === MERGE ===
                     r_idx = matched_candidate['idx']
                     current_data = matched_candidate['data']
                     merged_row = []
@@ -182,12 +174,11 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
                     for header in all_headers:
                         sheet_val = normalize_text(current_data.get(header, ""))
                         
-                        # Find Excel Value
                         excel_val = ""
                         if header == 'اسم': excel_val = u_name
                         elif header in up_df.columns: excel_val = normalize_text(row[header])
                         
-                        # UPDATE IF: Sheet is Empty AND Excel has Data
+                        # UPDATE ONLY IF: Sheet is Empty AND Excel has Value
                         if sheet_val == "" and excel_val != "":
                             merged_row.append(excel_val)
                             has_updates = True
@@ -199,8 +190,8 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
                         cnt_merged += 1
                 
                 else:
-                    # === ADD NEW PERSON ===
-                    # Name didn't exist OR Name existed but City/Prov conflicted (different person)
+                    # === ADD NEW ===
+                    # (Only if Name is new, OR Name exists but Location CONTRADICTS)
                     new_row = []
                     for header in all_headers:
                         if header == 'اسم':
@@ -215,11 +206,11 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
             # 5. Execute
             if cnt_new > 0 or cnt_merged > 0:
                 c_a, c_b = st.columns(2)
-                c_a.warning(f"🆕 افراد جدید (نام جدید یا شهر متفاوت): {cnt_new}")
-                c_b.info(f"🔄 تکمیل اطلاعات (نام و شهر یکسان): {cnt_merged}")
+                c_a.warning(f"🆕 افراد جدید: {cnt_new}")
+                c_b.info(f"🔄 تکمیل اطلاعات (ادغام): {cnt_merged}")
                 
-                if st.button("🚀 اجرای عملیات"):
-                    with st.status("در حال ذخیره...", expanded=True):
+                if st.button("🚀 ذخیره تغییرات"):
+                    with st.status("در حال پردازش...", expanded=True):
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         
@@ -227,17 +218,17 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Import)"):
                             sheet.append_rows(rows_to_add)
                         
                         if rows_to_update:
-                            # Update row by row to be safe
+                            # Safely update row by row
                             for r_num, r_vals in rows_to_update:
                                 sheet.update(range_name=f"A{r_num}", values=[r_vals])
                                 time.sleep(0.3)
                         
-                        st.success("انجام شد!")
+                        st.success("عملیات با موفقیت انجام شد!")
                         get_data.clear()
                         time.sleep(1)
                         st.rerun()
             else:
-                st.success("✅ داده‌ها کاملاً هماهنگ هستند. (هیچ مورد جدید یا ناقصی یافت نشد)")
+                st.success("✅ داده‌ها کاملاً هماهنگ هستند.")
 
         except Exception as e:
             st.error(f"Error: {e}")
@@ -280,7 +271,6 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # Helper for Inputs
     def draw_inputs(headers_list, container, data_dict, inputs_dict, num_columns=3):
         valid_headers = [h for h in headers_list if h in form_headers]
         if not valid_headers: return
@@ -290,24 +280,19 @@ else:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
 
-    # Form
     with st.form("entry_form", border=True):
         st.markdown(f"### 📄 پرونده: {locked_name}")
         user_inputs = {}
         
-        # 1. Personal
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs, num_columns=3)
 
-        # 2. Incident (1 Column - Vertical)
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs, num_columns=1)
 
-        # 3. Other
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs, num_columns=2)
 
-        # 4. Catch All
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
         remaining = [h for h in form_headers if h not in used]
         if remaining:
