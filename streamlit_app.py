@@ -4,6 +4,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from streamlit_searchbox import st_searchbox
 import time
+import numpy as np
 
 # ==========================================
 # 1. CONFIGURATION
@@ -40,13 +41,22 @@ st.markdown("""<style>
 # ==========================================
 
 def normalize_text(text):
-    """Standardizes text to ensure accurate matching"""
-    if pd.isna(text) or text is None:
+    """
+    Super strict cleaner.
+    Converts '""', '"  "', '"nan"', '"NaN"', None -> ""
+    """
+    if text is None:
         return ""
+    
+    # Convert to string
     text = str(text).strip()
-    text = text.replace("ي", "ی").replace("ك", "ک")
+    
+    # Check for common "empty" markers
     if text.lower() in ["nan", "none", "null", "-", ""]:
         return ""
+        
+    # Standardize Persian characters
+    text = text.replace("ي", "ی").replace("ك", "ک")
     return text
 
 @st.cache_resource
@@ -75,7 +85,8 @@ try:
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
-    existing_names = [normalize_text(x) for x in df['اسم'].tolist() if normalize_text(x)]
+    # Filter existing names
+    existing_names = [normalize_text(x) for x in df['اسم'].tolist() if normalize_text(x) != ""]
 except Exception as e:
     st.error(f"❌ خطا: {e}")
     st.stop()
@@ -96,15 +107,16 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 SMART MERGE (FIXED LOGIC)
+# 📥 SMART MERGE (Empty-Proof)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Empty-Proof Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
             # 1. Read Excel
-            up_df = pd.read_excel(uploaded_file, dtype=str).fillna("")
+            # Replace numpy NaN with "" immediately
+            up_df = pd.read_excel(uploaded_file, dtype=str).replace(np.nan, "", regex=True)
             up_df.columns = [normalize_text(c) for c in up_df.columns]
 
             # 2. Select Columns
@@ -118,7 +130,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
             col_city = c2.selectbox("ستون 'شهر':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'شهر')))
             col_prov = c3.selectbox("ستون 'استان':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'استان')))
 
-            # 3. Build Index of Existing Data
+            # 3. Build Index
             name_index = {}
             for idx, row in df.iterrows():
                 nm = normalize_text(row.get('اسم', ''))
@@ -126,7 +138,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                     if nm not in name_index: name_index[nm] = []
                     name_index[nm].append({'idx': idx + 2, 'data': row})
 
-            # 4. Processing Loop
+            # 4. Processing
             rows_to_add = []
             rows_to_update = []
             
@@ -134,16 +146,13 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
             cnt_merged = 0
 
             for i, row in up_df.iterrows():
-                # Get Excel Data (Normalized)
                 u_name = normalize_text(row[col_name])
                 u_city = normalize_text(row[col_city])
                 u_prov = normalize_text(row[col_prov])
                 
                 if not u_name: continue
 
-                # Look for candidates in Sheet
                 candidates = name_index.get(u_name, [])
-                
                 matched_candidate = None
                 
                 # --- MATCHING LOGIC ---
@@ -152,13 +161,9 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                     sheet_city = normalize_text(sheet_data.get('شهر', ''))
                     sheet_prov = normalize_text(sheet_data.get('استان', ''))
                     
-                    # RELAXED CHECK:
-                    # They match if:
-                    # 1. Cities are identical OR one of them is empty
-                    # 2. AND Provinces are identical OR one of them is empty
-                    
-                    city_compatible = (sheet_city == u_city) or (sheet_city == "") or (u_city == "")
-                    prov_compatible = (sheet_prov == u_prov) or (sheet_prov == "") or (u_prov == "")
+                    # Match if: (Empty OR Equal)
+                    city_compatible = (sheet_city == "") or (sheet_city == u_city) or (u_city == "")
+                    prov_compatible = (sheet_prov == "") or (sheet_prov == u_prov) or (u_prov == "")
                     
                     if city_compatible and prov_compatible:
                         matched_candidate = cand
@@ -172,18 +177,20 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                     has_updates = False
                     
                     for header in all_headers:
+                        # KEY CHANGE: Normalize BOTH values to be sure " " becomes ""
                         sheet_val = normalize_text(current_data.get(header, ""))
                         
                         excel_val = ""
                         if header == 'اسم': excel_val = u_name
                         elif header in up_df.columns: excel_val = normalize_text(row[header])
                         
-                        # UPDATE ONLY IF: Sheet is Empty AND Excel has Value
+                        # UPDATE LOGIC:
+                        # If Sheet is TRULY EMPTY ("") AND Excel HAS DATA ("Tehran")
                         if sheet_val == "" and excel_val != "":
                             merged_row.append(excel_val)
                             has_updates = True
                         else:
-                            merged_row.append(sheet_val)
+                            merged_row.append(sheet_val) # Keep original
                     
                     if has_updates:
                         rows_to_update.append((r_idx, merged_row))
@@ -191,7 +198,6 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                 
                 else:
                     # === ADD NEW ===
-                    # (Only if Name is new, OR Name exists but Location CONTRADICTS)
                     new_row = []
                     for header in all_headers:
                         if header == 'اسم':
@@ -207,9 +213,9 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
             if cnt_new > 0 or cnt_merged > 0:
                 c_a, c_b = st.columns(2)
                 c_a.warning(f"🆕 افراد جدید: {cnt_new}")
-                c_b.info(f"🔄 تکمیل اطلاعات (ادغام): {cnt_merged}")
+                c_b.info(f"🔄 تکمیل اطلاعات: {cnt_merged}")
                 
-                if st.button("🚀 ذخیره تغییرات"):
+                if st.button("🚀 اجرای عملیات"):
                     with st.status("در حال پردازش...", expanded=True):
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
@@ -218,17 +224,16 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                             sheet.append_rows(rows_to_add)
                         
                         if rows_to_update:
-                            # Safely update row by row
                             for r_num, r_vals in rows_to_update:
                                 sheet.update(range_name=f"A{r_num}", values=[r_vals])
                                 time.sleep(0.3)
                         
-                        st.success("عملیات با موفقیت انجام شد!")
+                        st.success("انجام شد!")
                         get_data.clear()
                         time.sleep(1)
                         st.rerun()
             else:
-                st.success("✅ داده‌ها کاملاً هماهنگ هستند.")
+                st.success("✅ داده‌ها هماهنگ هستند (مورد جدیدی یافت نشد).")
 
         except Exception as e:
             st.error(f"Error: {e}")
