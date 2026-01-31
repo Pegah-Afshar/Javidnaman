@@ -52,6 +52,7 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+    # Get all records as string to avoid type issues
     return pd.DataFrame(sheet.get_all_records(expected_headers=[]))
 
 # ==========================================
@@ -62,7 +63,8 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    df.columns = df.columns.astype(str).str.strip() 
+    # Clean up column names (remove hidden spaces)
+    df.columns = df.columns.astype(str).str.strip()
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
@@ -87,26 +89,24 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 INTELLIGENT IMPORT (Robust & Diagnostics)
+# 📥 INTELLIGENT IMPORT (SMART FILL)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (با گزارش ستون‌ها)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
-            # 1. Read & Clean
-            up_df = pd.read_excel(uploaded_file).fillna("")
+            # 1. Read & Force Text Type
+            # dtype=str ensures '25' (age) is read as text "25", not number 25.0
+            up_df = pd.read_excel(uploaded_file, dtype=str).fillna("")
             up_df.columns = up_df.columns.astype(str).str.strip()
-            up_df = up_df.astype(str)
 
             # --- DIAGNOSTIC REPORT ---
-            # Create a map to handle Case Insensitive matching (e.g. "Age" matches "age")
-            # Key = Lowercase Clean Name, Value = Real Excel Column Name
+            # Map Lowercase -> Real Excel Header
             excel_col_map = {c.lower().strip(): c for c in up_df.columns}
             
             matched_cols = []
             missing_cols = []
-            
             for h in all_headers:
                 if h.lower().strip() in excel_col_map:
                     matched_cols.append(h)
@@ -117,17 +117,14 @@ with st.expander("📥 افزودن و تکمیل گروهی (با گزارش س
             c_ok, c_bad = st.columns(2)
             with c_ok:
                 if matched_cols:
-                    st.success(f"✅ ستون‌های شناسایی شده ({len(matched_cols)}):")
-                    st.caption(", ".join(matched_cols))
+                    st.success(f"✅ {len(matched_cols)} ستون شناسایی شد (آماده کپی)")
             with c_bad:
                 if missing_cols:
-                    st.error(f"❌ ستون‌هایی که در اکسل پیدا نشدند ({len(missing_cols)}):")
-                    st.caption("این اطلاعات کپی نخواهند شد مگر اینکه نام ستون در اکسل را دقیقاً مشابه لیست زیر کنید:")
-                    st.caption(", ".join(missing_cols))
-
+                    st.error(f"❌ {len(missing_cols)} ستون در اکسل پیدا نشد (کپی نمی‌شوند)")
+                    st.caption(f"مثال: {', '.join(missing_cols[:3])}...")
             st.markdown("---")
 
-            # 2. Select Key Columns
+            # 2. Key Columns
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords): return i
@@ -166,69 +163,94 @@ with st.expander("📥 افزودن و تکمیل گروهی (با گزارش س
                 
                 if is_empty(u_name): continue
 
-                # Look for compatible matches in Sheet
                 candidate_list = name_index.get(u_name, [])
-                matched_record = None
                 
+                # We need to find the BEST candidate to update
+                # Priority: A compatible match that HAS EMPTY CELLS we can fill
+                best_match = None
+                best_new_info_count = -1
+                
+                # Check compatibility
+                compatible_candidates = []
                 for candidate in candidate_list:
                     sheet_city = str(candidate['data'].get('شهر', '')).strip()
                     sheet_prov = str(candidate['data'].get('استان', '')).strip()
                     
-                    # MATCH LOGIC: Compatible if Sheet location is Empty OR Matches Excel
+                    # Logic: Compatible if Sheet location is Empty OR Matches Excel
                     city_ok = is_empty(sheet_city) or (sheet_city.lower() == u_city.lower())
                     prov_ok = is_empty(sheet_prov) or (sheet_prov.lower() == u_prov.lower())
                     
                     if city_ok and prov_ok:
-                        matched_record = candidate
-                        break 
-                
-                # --- PREPARE DATA ---
-                if matched_record:
-                    # MERGE (Fill gaps)
-                    current_sheet_data = matched_record['data']
-                    row_number = matched_record['row_idx']
-                    merged_row = []
-                    has_new_info = False
+                        compatible_candidates.append(candidate)
+
+                if compatible_candidates:
+                    # We found existing people! Now let's see if we should update one.
+                    for cand in compatible_candidates:
+                        current_sheet_data = cand['data']
+                        
+                        # Calculate how much new info this update would provide
+                        new_info_count = 0
+                        temp_merged_row = [] # Just for checking
+                        
+                        for header in all_headers:
+                            current_val = str(current_sheet_data.get(header, "")).strip()
+                            
+                            # Get Excel Value
+                            excel_val = ""
+                            if header == 'اسم': excel_val = u_name
+                            elif header == 'شهر': excel_val = u_city
+                            elif header == 'استان': excel_val = u_prov
+                            elif header.lower().strip() in excel_col_map:
+                                real_col = excel_col_map[header.lower().strip()]
+                                excel_val = str(row[real_col]).strip()
+                            
+                            # LOGIC: If Sheet Empty AND Excel Not Empty -> It's useful!
+                            if is_empty(current_val) and not is_empty(excel_val):
+                                new_info_count += 1
+                        
+                        # We pick the candidate that benefits the MOST from this update
+                        if new_info_count > best_new_info_count:
+                            best_new_info_count = new_info_count
+                            best_match = cand
+
+                    # If we found a useful update (count > 0), queue it
+                    if best_match and best_new_info_count > 0:
+                        row_number = best_match['row_idx']
+                        current_sheet_data = best_match['data']
+                        final_merged_row = []
+                        
+                        for header in all_headers:
+                            current_val = str(current_sheet_data.get(header, "")).strip()
+                            
+                            excel_val = ""
+                            if header == 'اسم': excel_val = u_name
+                            elif header == 'شهر': excel_val = u_city
+                            elif header == 'استان': excel_val = u_prov
+                            elif header.lower().strip() in excel_col_map:
+                                real_col = excel_col_map[header.lower().strip()]
+                                excel_val = str(row[real_col]).strip()
+                            
+                            if is_empty(current_val) and not is_empty(excel_val):
+                                final_merged_row.append(excel_val)
+                            else:
+                                final_merged_row.append(current_val)
+                        
+                        rows_to_update.append((row_number, final_merged_row))
                     
-                    for header in all_headers:
-                        current_val = str(current_sheet_data.get(header, "")).strip()
-                        
-                        # Find Excel Value (Case Insensitive Search)
-                        excel_val = ""
-                        h_lower = header.lower().strip()
-                        
-                        if header == 'اسم': excel_val = u_name
-                        elif header == 'شهر': excel_val = u_city
-                        elif header == 'استان': excel_val = u_prov
-                        elif h_lower in excel_col_map: 
-                            real_col = excel_col_map[h_lower]
-                            excel_val = str(row[real_col]).strip()
-                        
-                        # OVERWRITE LOGIC: If Sheet is Empty AND Excel has data
-                        if is_empty(current_val) and not is_empty(excel_val):
-                            merged_row.append(excel_val)
-                            has_new_info = True
-                        else:
-                            merged_row.append(current_val)
-                    
-                    if has_new_info:
-                        rows_to_update.append((row_number, merged_row))
+                    # Note: If best_new_info_count == 0, it means the sheet already has all info
+                    # So we do NOTHING (Don't duplicate, Don't overwrite)
 
                 else:
-                    # ADD NEW
+                    # No compatible match found -> NEW PERSON
                     new_row = []
                     for header in all_headers:
-                        # Find Excel Value (Case Insensitive Search)
                         excel_val = ""
-                        h_lower = header.lower().strip()
-                        
                         if header == 'اسم': excel_val = u_name
                         elif header == 'شهر': excel_val = u_city
                         elif header == 'استان': excel_val = u_prov
-                        elif h_lower in excel_col_map: 
-                            real_col = excel_col_map[h_lower]
+                        elif header.lower().strip() in excel_col_map:
+                            real_col = excel_col_map[header.lower().strip()]
                             excel_val = str(row[real_col]).strip()
-                        
                         new_row.append(excel_val)
                     rows_to_append.append(new_row)
 
