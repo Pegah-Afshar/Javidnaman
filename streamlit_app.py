@@ -9,7 +9,7 @@ import uuid
 # ==========================================
 # 1. SETUP
 # ==========================================
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋", initial_sidebar_state="collapsed")
+st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋", initial_sidebar_state="collapsed")
 
 # Groups
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
@@ -251,7 +251,7 @@ def search_names(search_term: str):
 
 if st.session_state.active_name is None:
     c_h1, c_h2 = st.columns([4, 1])
-    with c_h1: st.subheader("🔍 جستجوی پرونده")
+    with c_h1: st.subheader("🔍 ")
     with c_h2: st.caption(f"تعداد: {len(existing_names)}")
     
     sel = st_searchbox(search_names, key="search_box_main", placeholder="نام...")
