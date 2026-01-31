@@ -6,12 +6,14 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # ==========================================
-# 1. CONFIGURATION
+# 1. CONFIGURATION (STRICT ORDER)
 # ==========================================
 
+# 1. Personal Info
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# ✅ ORDER IS: Right -> Middle -> Left (Row 1), then Right -> Middle -> Left (Row 2)
+# 2. Incident Info (EXACT ORDER REQUESTED)
+# The App will fill: Right -> Middle -> Left (Row 1), then Right -> Middle ... (Row 2)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -23,6 +25,7 @@ GROUP_INCIDENT = [
     "آرامگاه"
 ]
 
+# 3. Other Info
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
@@ -63,7 +66,9 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    # ⚠️ CLEANUP: Remove extra spaces from headers to ensure matching works
+    
+    # ⚠️ CRITICAL FIX: STRIP SPACES from headers
+    # This ensures "تاریخ  شمسی" (sheet) matches "تاریخ شمسی" (code)
     df.columns = df.columns.astype(str).str.strip()
     
     all_headers = df.columns.tolist()
@@ -126,17 +131,20 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # --- HELPER FUNCTION (Forces Order) ---
+    # --- HELPER FUNCTION (STRICT ORDER) ---
     def draw_inputs(headers_list, container, data_dict, inputs_dict):
-        # 1. Filter: Check which headers actually exist in the Google Sheet
-        # The list comprehension PRESERVES the user's order from 'headers_list'
+        # 1. We start with YOUR list (headers_list) to preserve order
+        # 2. We keep only ones that actually exist in the Sheet (valid_headers)
         valid_headers = [h for h in headers_list if h in form_headers]
         
         if not valid_headers: return
         
         cols = container.columns(3)
         for i, header in enumerate(valid_headers):
-            # i % 3 determines column: 0=Right, 1=Middle, 2=Left (in RTL)
+            # i % 3 logic: 
+            # 0 -> Right Column
+            # 1 -> Middle Column
+            # 2 -> Left Column
             with cols[i % 3]:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
@@ -153,7 +161,7 @@ else:
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs)
 
-        # SECTION 2: INCIDENT (Exact Order Requested)
+        # SECTION 2: INCIDENT (Will follow your list exactly)
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs)
 
@@ -162,11 +170,11 @@ else:
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs)
 
         # SECTION 4: CATCH-ALL
-        # If a box appears here, it means the spelling in Python didn't match the Google Sheet
+        # If any boxes appear here, it means the NAME in the code didn't match the Google Sheet
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
-            st.markdown('<div class="section-header">📂 ستون‌های دسته‌بندی نشده</div>', unsafe_allow_html=True)
-            st.caption("توجه: این ستون‌ها به دلیل عدم تطابق نام، در گروه‌های بالا قرار نگرفتند:")
+            st.markdown('<div class="section-header">⚠️ ستون‌های نامنطبق (بررسی کنید)</div>', unsafe_allow_html=True)
+            st.caption("نام این ستون‌ها در کد و گوگل شیت یکی نیست، برای همین ترتیب ندارند:")
             draw_inputs(remaining_headers, st, current_data, user_inputs)
 
         st.markdown("---")
@@ -176,6 +184,7 @@ else:
             submitted = st.form_submit_button("💾 ثبت نهایی")
 
         if submitted:
+            # Simple numeric check
             validation_errors = []
             for field in NUMERIC_FIELDS:
                 if field in user_inputs and user_inputs[field].strip():
