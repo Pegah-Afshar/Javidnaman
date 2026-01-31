@@ -7,13 +7,13 @@ import time
 import numpy as np
 
 # ==========================================
-# 1. MOBILE CONFIGURATION
+# 1. MOBILE CONFIGURATION (ULTRA COMPACT)
 # ==========================================
 st.set_page_config(
-    page_title="مدیریت جاویدنامان", 
+    page_title="مدیریت", 
     layout="wide", 
     page_icon="📋",
-    initial_sidebar_state="collapsed" # Keeps sidebar closed on mobile to save space
+    initial_sidebar_state="collapsed"
 )
 
 # Groups
@@ -22,38 +22,43 @@ GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان"
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 NUMERIC_FIELDS = ["سن"]
 
-# 🎨 MOBILE CSS OPTIMIZATION
+# 🎨 EXTREME CSS OPTIMIZATION
 st.markdown("""<style>
     /* Global Font & Direction */
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
     
-    /* Input Labels Alignment */
-    .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-size: 0.9rem; }
-    
-    /* Reduce Padding on Mobile */
-    .block-container { padding-top: 1rem !important; padding-bottom: 3rem !important; }
-    
-    /* Make buttons full width on mobile */
-    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; }
-    
-    /* Hide the 'Deploy' button and header decoration */
-    header {visibility: hidden;}
-    #MainMenu {visibility: hidden;}
-    
-    /* Custom Card Style for Form Groups */
-    .form-card {
-        background-color: #f9f9f9;
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        border: 1px solid #eee;
+    /* REMOVE ALL TOP PADDING */
+    .block-container { 
+        padding-top: 0rem !important; 
+        padding-bottom: 2rem !important; 
+        margin-top: -20px !important;
     }
+    
+    /* Input Labels */
+    .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-size: 0.85rem; margin-bottom: -5px; }
+    
+    /* Full Width Buttons */
+    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; padding: 0.25rem 0.5rem; }
+    
+    /* Hide Header/Footer completely */
+    header {display: none !important;}
+    footer {display: none !important;}
+    #MainMenu {display: none !important;}
+    
+    /* Form Card Compact Style */
+    .form-card {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 8px;
+        margin-bottom: 8px;
+        border: 1px solid #e0e0e0;
+    }
+    .form-card b { color: #1a73e8; font-size: 0.95rem; }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
 # 2. HELPER FUNCTIONS
 # ==========================================
-
 def clean_str(val):
     if val is None: return ""
     s = str(val).strip()
@@ -76,7 +81,7 @@ def get_fingerprint(text):
     return t
 
 # ==========================================
-# 3. BACKEND (OPTIMIZED SPEED)
+# 3. BACKEND
 # ==========================================
 @st.cache_resource
 def get_connection():
@@ -85,7 +90,6 @@ def get_connection():
     client = gspread.authorize(creds)
     return client
 
-# ⚡ INCREASED CACHE TO 10 MINUTES (600s) FOR SPEED
 @st.cache_data(ttl=600) 
 def get_data():
     client = get_connection()
@@ -96,7 +100,7 @@ def get_data():
     return df
 
 # ==========================================
-# 4. LOAD & PREPARE
+# 4. LOAD DATA
 # ==========================================
 if 'active_name' not in st.session_state:
     st.session_state.active_name = None
@@ -112,34 +116,25 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 🛡️ SIDEBAR: ADVANCED TOOLS (Backup & Import)
+# 🛡️ SIDEBAR (TOOLS)
 # ==========================================
 with st.sidebar:
-    st.markdown("### ⚙️ ابزار مدیریت")
-    
-    # 1. REFRESH BUTTON (Since we increased cache time)
-    if st.button("🔄 بروزرسانی لیست (Refresh)"):
+    st.markdown("### ⚙️ تنظیمات")
+    if st.button("🔄 رفرش"):
         get_data.clear()
         st.rerun()
     
     st.markdown("---")
     
-    # 2. BACKUP
-    st.markdown("#### 💾 پشتیبان‌گیری")
+    # BACKUP
     csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 دانلود فایل CSV",
-        data=csv,
-        file_name=f"Backup_{time.strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-    )
+    st.download_button("📥 دانلود بکاپ", csv, f"Backup_{time.strftime('%Y%m%d')}.csv", "text/csv")
 
     st.markdown("---")
 
-    # 3. IMPORT (Moved to Sidebar to clean Main Screen)
-    with st.expander("📥 ایمپورت اکسل (Advanced)"):
+    # IMPORT TOOL
+    with st.expander("📥 ایمپورت اکسل"):
         uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
-        debug_mode = st.checkbox("دیباگ", value=False)
         
         if uploaded_file:
             try:
@@ -147,13 +142,11 @@ with st.sidebar:
                 up_df = up_df.fillna("").astype(str)
                 up_df.columns = [clean_str(c) for c in up_df.columns]
 
-                # Map Columns (Simplified for sidebar width)
                 c_idx = lambda cols, k: next((i for i, c in enumerate(cols) if k in c), 0)
                 col_name = st.selectbox("ستون نام", up_df.columns, index=c_idx(up_df.columns, 'اسم'))
                 col_city = st.selectbox("ستون شهر", up_df.columns, index=c_idx(up_df.columns, 'شهر'))
                 col_prov = st.selectbox("ستون استان", up_df.columns, index=c_idx(up_df.columns, 'استان'))
 
-                # Build Index
                 sheet_index = {}
                 for idx, row in df.iterrows():
                     nm = clean_str(row.get('اسم', ''))
@@ -165,12 +158,10 @@ with st.sidebar:
                 rows_to_add = []
                 rows_to_update = []
                 
-                # Logic Loop
                 for i, row in up_df.iterrows():
                     u_name = clean_str(row[col_name])
                     if not u_name: continue
                     
-                    # Logic same as before (Fingerprint + Empty Check)
                     u_key = get_fingerprint(u_name)
                     candidates = sheet_index.get(u_key, [])
                     match_found = None
@@ -189,7 +180,6 @@ with st.sidebar:
                             break
                     
                     if match_found:
-                        # Merge
                         r_idx = match_found['idx']
                         merged = []
                         do_upd = False
@@ -197,8 +187,7 @@ with st.sidebar:
                             s_val = clean_str(match_found['data'].get(h, ""))
                             e_val = ""
                             if h == 'اسم': e_val = u_name
-                            elif h in up_df.columns: 
-                                e_val = format_age(row[h]) if h == 'سن' else clean_str(row[h])
+                            elif h in up_df.columns: e_val = format_age(row[h]) if h == 'سن' else clean_str(row[h])
                             
                             if s_val == "" and e_val != "":
                                 merged.append(e_val)
@@ -207,17 +196,15 @@ with st.sidebar:
                                 merged.append(s_val)
                         if do_upd: rows_to_update.append((r_idx, merged))
                     else:
-                        # Add
                         new_r = []
                         for h in all_headers:
                             if h == 'اسم': new_r.append(u_name)
-                            elif h in up_df.columns:
-                                new_r.append(format_age(row[h]) if h == 'سن' else clean_str(row[h]))
+                            elif h in up_df.columns: new_r.append(format_age(row[h]) if h == 'سن' else clean_str(row[h]))
                             else: new_r.append("")
                         rows_to_add.append(new_r)
 
                 if rows_to_add or rows_to_update:
-                    st.info(f"➕ جدید: {len(rows_to_add)} | 🔄 آپدیت: {len(rows_to_update)}")
+                    st.info(f"➕ {len(rows_to_add)} | 🔄 {len(rows_to_update)}")
                     if st.button("🚀 اجرا"):
                         sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         if rows_to_add: sheet.append_rows(rows_to_add)
@@ -229,13 +216,13 @@ with st.sidebar:
                         time.sleep(1)
                         st.rerun()
                 else:
-                    st.success("✅ داده‌ها یکسان هستند")
+                    st.success("✅ هماهنگ")
 
             except Exception as e:
                 st.error(f"خطا: {e}")
 
 # ==========================================
-# MAIN UI (CLEAN FOR MOBILE)
+# 5. MAIN UI (ULTRA COMPACT)
 # ==========================================
 def search_names(search_term: str):
     if not search_term: return existing_names
@@ -243,44 +230,43 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-# HEADER
-c1, c2 = st.columns([4, 2])
-with c1: st.title("📋 سامانه هوشمند")
-with c2: st.metric("کل", len(existing_names))
-
-# SEARCH
+# SEARCH BOX (Top of Screen)
 if st.session_state.active_name is None:
-    st.info("👇 جستجو کنید:")
-    selected_value = st_searchbox(search_names, key="search_box_main", placeholder="نام...")
+    # No title, just the search box immediately
+    selected_value = st_searchbox(
+        search_names, 
+        key="search_box_main", 
+        placeholder="🔍 جستجوی نام..."
+    )
     if selected_value:
         st.session_state.active_name = selected_value
         st.rerun()
+    
+    # Show count in small text below
+    st.caption(f"تعداد رکوردها: {len(existing_names)}")
 
-# FORM
+# ENTRY FORM
 else:
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
-    # Top Bar
-    c_status, c_close = st.columns([3, 1])
+    # Compact Header Row
+    c_status, c_close = st.columns([4, 1])
     with c_status:
-        if is_edit_mode: st.success(f"✏️ ویرایش: **{locked_name}**")
-        else: st.warning(f"🆕 جدید: **{locked_name}**")
+        if is_edit_mode: st.success(f"✏️ **{locked_name}**")
+        else: st.warning(f"🆕 **{locked_name}**")
     with c_close:
-        if st.button("❌ بستن"):
+        if st.button("✖"):
             st.session_state.active_name = None
             st.rerun()
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # Helper to draw inputs nicely
     def draw_section(title, headers, cols=3):
         valid = [h for h in headers if h in form_headers]
         if not valid: return
         
-        # UI Card effect
         st.markdown(f'<div class="form-card"><b>{title}</b></div>', unsafe_allow_html=True)
-        
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i % cols]:
@@ -289,19 +275,17 @@ else:
                 st.text_input(h, value=str(val), key=f"input_{h}", label_visibility="visible")
 
     with st.form("main_form"):
-        # We use fewer columns on mobile logic by relying on st.columns wrapping
-        # But 'st.columns(3)' usually works OK on mobile (stacks to 1)
-        
-        draw_section("👤 فردی", GROUP_PERSONAL, 2) # 2 cols looks better on mobile than 3
-        draw_section("📍 حادثه", GROUP_INCIDENT, 1) # Vertical is safer for long text
+        # Very compact layout
+        draw_section("👤 فردی", GROUP_PERSONAL, 2)
+        draw_section("📍 حادثه", GROUP_INCIDENT, 1)
         draw_section("🔗 سایر", GROUP_OTHER, 1)
         
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
         rem = [h for h in form_headers if h not in used]
         if rem: draw_section("📂 دیگر", rem, 2)
 
-        st.markdown("---")
-        if st.form_submit_button("💾 ذخیره اطلاعات", type="primary"):
+        st.markdown("") # Tiny spacer
+        if st.form_submit_button("💾 ذخیره", type="primary"):
             try:
                 sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 row_data = []
@@ -317,9 +301,9 @@ else:
                 else:
                     sheet.append_row(row_data)
                 
-                st.toast("ذخیره شد!", icon='✅')
+                st.toast("ذخیره شد", icon='✅')
                 get_data.clear()
-                time.sleep(1)
+                time.sleep(0.5)
                 st.session_state.active_name = None
                 st.rerun()
             except Exception as e:
