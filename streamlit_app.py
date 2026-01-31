@@ -8,15 +8,14 @@ import time
 # ==========================================
 # 1. CONFIGURATION & LAYOUT SETUP
 # ==========================================
-# ⚠️ IMPORTANT: Update these lists to match your Google Sheet Headers EXACTLY.
-# If a column in your sheet is not listed here, it will appear at the bottom automatically.
 
-GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "نام "]
-GROUP_INCIDENT = ["تاریخ شهادت شمسی", "تاریخ شهادت میلادی", "استان", "شهر", "خیابان", "مکان دقیق", "نحوه شهادت", "مزار"]
-GROUP_OTHER    = ["اینستاگرام توییتر", "بستگان", "توضیحات تکمیلی"]
+# ✅ UPDATED GROUPS BASED ON YOUR REQUEST
+GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "نام پدر"]
+GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان", "شهر", "خیابان", "مکان دقیق", "نحوه کشته شدن", "مزار"]
+GROUP_OTHER    = ["شبکه های اجتماعی", "بستگان", "توضیحات تکمیلی"]
 
-# Numeric check (unchanged)
-NUMERIC_FIELDS = ["سن", "سال تولد"]
+# Fields to check if they are numbers (Only "سن" is numeric in your new list)
+NUMERIC_FIELDS = ["سن"]
 
 st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
 
@@ -28,8 +27,16 @@ st.markdown("""<style>
     .st-emotion-cache-16idsys p { display: none; } 
     [data-testid="stForm"] { border: 1px solid #ddd; padding: 25px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
     
-    /* Section Headers */
-    .section-header { color: #1a73e8; font-size: 1.2em; font-weight: bold; margin-top: 20px; margin-bottom: 10px; border-bottom: 2px solid #eee; padding-bottom: 5px; }
+    /* Section Headers Styling */
+    .section-header { 
+        color: #1a73e8; 
+        font-size: 1.1em; 
+        font-weight: bold; 
+        margin-top: 25px; 
+        margin-bottom: 15px; 
+        border-bottom: 2px solid #f0f2f6; 
+        padding-bottom: 8px; 
+    }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
@@ -57,7 +64,6 @@ if 'active_name' not in st.session_state:
 try:
     df = get_data()
     all_headers = df.columns.tolist()
-    # "form_headers" contains all editable columns (everything except Name)
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
@@ -87,7 +93,7 @@ if st.session_state.active_name is None:
         st.rerun()
 
 # ==========================================
-# SCREEN 2: ENTRY FORM (NEW LAYOUT)
+# SCREEN 2: ENTRY FORM (UPDATED GROUPS)
 # ==========================================
 else:
     locked_name = st.session_state.active_name
@@ -113,7 +119,7 @@ else:
 
     # --- HELPER TO DRAW INPUTS ---
     def draw_inputs(headers_list, container, data_dict, inputs_dict):
-        # Filter: only draw headers that actually exist in the Google Sheet
+        # Only draw headers that actually exist in the Google Sheet columns
         valid_headers = [h for h in headers_list if h in form_headers]
         if not valid_headers: return
         
@@ -122,7 +128,6 @@ else:
             with cols[i % 3]:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
-                # Mark as drawn so we don't draw it again
                 drawn_headers.add(header)
 
     # --- THE FORM ---
@@ -130,7 +135,7 @@ else:
         st.markdown(f"### 📄 پرونده: {locked_name}")
         
         user_inputs = {}
-        drawn_headers = set() # To keep track of what we have shown
+        drawn_headers = set() 
 
         # SECTION 1: PERSONAL INFO
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
@@ -144,12 +149,10 @@ else:
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs)
 
-        # SECTION 4: UNCATEGORIZED (Safety Net)
-        # Any column in Google Sheet not listed above will appear here
+        # SECTION 4: REMAINING COLUMNS (Catch-all)
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
-            st.markdown("---")
-            st.caption("سایر ستون‌های موجود در فایل:")
+            st.markdown('<div class="section-header">📂 سایر ستون‌ها (دسته‌بندی نشده)</div>', unsafe_allow_html=True)
             draw_inputs(remaining_headers, st, current_data, user_inputs)
 
         st.markdown("---")
@@ -175,7 +178,6 @@ else:
                     if is_edit_mode:
                         changes_detected = False
                         for header in form_headers:
-                            # We check all headers (user_inputs has everything, even if drawn in different sections)
                             if str(current_data.get(header, "")).strip() != user_inputs.get(header, "").strip():
                                 changes_detected = True
                                 break
