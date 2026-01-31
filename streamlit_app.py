@@ -9,6 +9,7 @@ import time
 # 1. CONFIGURATION
 # ==========================================
 
+# Personal Info
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
 # Incident Info (STRICT VERTICAL ORDER)
@@ -23,6 +24,7 @@ GROUP_INCIDENT = [
     "آرامگاه"
 ]
 
+# Other Info
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
@@ -95,10 +97,16 @@ with st.expander("📥 افزودن گروهی با بررسی شهر/استان
     
     if uploaded_file:
         try:
-            up_df = pd.read_excel(uploaded_file)
+            # ✅ FIX 1: Add .fillna("") to replace 'nan' with empty strings immediately
+            up_df = pd.read_excel(uploaded_file).fillna("")
+            
+            # Clean headers
             up_df.columns = up_df.columns.astype(str).str.strip()
             
-            # Helper to find default column index based on keywords
+            # Ensure all data is string (to avoid 'nan' being treated as float)
+            up_df = up_df.astype(str)
+
+            # Helper to find default column index
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords):
@@ -114,11 +122,10 @@ with st.expander("📥 افزودن گروهی با بررسی شهر/استان
             with c3:
                 col_prov = st.selectbox("ستون 'استان' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
 
-            # 2. Build Database Fingerprints (Name + City + Province)
-            # We create a set of unique combinations already in Google Sheets
+            # 2. Build Database Fingerprints
             existing_fingerprints = set()
             for index, row in df.iterrows():
-                # Normalize: Strip spaces to handle " Tehran " vs "Tehran"
+                # ✅ FIX 2: Strict stripping of spaces to catch "Ali " vs "Ali"
                 f_name = str(row.get('اسم', '')).strip()
                 f_city = str(row.get('شهر', '')).strip()
                 f_prov = str(row.get('استان', '')).strip()
@@ -128,14 +135,17 @@ with st.expander("📥 افزودن گروهی با بررسی شهر/استان
             new_rows_to_add = []
             
             for index, row in up_df.iterrows():
+                # Use str().strip() on upload data too
                 u_name = str(row[col_name]).strip()
                 u_city = str(row[col_city]).strip()
                 u_prov = str(row[col_prov]).strip()
                 
+                # If name is basically empty or "nan", skip it
+                if not u_name or u_name.lower() == 'nan':
+                    continue
+
                 # CHECK: Does this exact combination exist?
                 if (u_name, u_city, u_prov) not in existing_fingerprints:
-                    # It's NEW! (Either new name, OR same name but diff city)
-                    
                     # Create the row data
                     new_data_row = []
                     for header in all_headers:
@@ -146,9 +156,10 @@ with st.expander("📥 افزودن گروهی با بررسی شهر/استان
                         elif header == 'استان':
                             new_data_row.append(u_prov)
                         else:
-                            # Try to find matching column in excel, else empty
                             if header in up_df.columns:
-                                new_data_row.append(str(row[header]))
+                                val = str(row[header]).strip()
+                                # Double check to ensure no 'nan' slips through
+                                new_data_row.append(val if val.lower() != 'nan' else "")
                             else:
                                 new_data_row.append("")
                     
@@ -157,7 +168,7 @@ with st.expander("📥 افزودن گروهی با بررسی شهر/استان
             # 4. Show Results
             if new_rows_to_add:
                 st.info(f"📊 فایل شما {len(up_df)} ردیف دارد.")
-                st.warning(f"🆕 تعداد {len(new_rows_to_add)} نفر جدید شناسایی شدند (نام جدید یا شهر متفاوت).")
+                st.warning(f"🆕 تعداد {len(new_rows_to_add)} نفر جدید شناسایی شدند.")
                 
                 if st.button(f"🚀 افزودن {len(new_rows_to_add)} نفر به دیتابیس"):
                     with st.status("در حال آپلود...", expanded=True) as status:
