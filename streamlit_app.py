@@ -9,9 +9,8 @@ import numpy as np
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
+st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋")
 
-# Define Columns
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان", "شهر", "محله خیابان", "محل دقیق کشته شدن", "طریقه‌ی کشته شدن", "آرامگاه"]
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
@@ -24,25 +23,28 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. THE "NUCLEAR" CLEANER FUNCTION
+# 2. HELPER FUNCTIONS
 # ==========================================
+
 def clean_str(val):
-    """
-    Forces ANY value to be a clean string.
-    Handles NaN, None, float, int, "nan" text, spaces.
-    """
+    """Basic cleaner for display and saving (keeps spaces, but removes junk)"""
     if val is None: return ""
-    
-    # Force to string
     s = str(val).strip()
-    
-    # Handle Excel/Pandas artifacts
-    if s.lower() in ['nan', 'none', 'nat', 'null', '0', '0.0']: 
-        # Note: I added '0' just in case empty Excel cells come as 0. 
-        # Remove '0' from this list if '0' is a valid real value for you.
-        return ""
-        
+    if s.lower() in ['nan', 'none', 'nat', 'null', '0', '0.0']: return ""
     return s
+
+def get_fingerprint(text):
+    """
+    SUPER CLEANER for MATCHING only.
+    Removes ALL spaces, Half-spaces (ZWNJ), and normalizes Ye/Kaf.
+    """
+    if not text: return ""
+    t = str(text).strip()
+    # 1. Normalize Characters
+    t = t.replace("ي", "ی").replace("ك", "ک")
+    # 2. Remove ALL types of spaces (Regular, Half-space, Tab)
+    t = t.replace(" ", "").replace("\u200c", "").replace("\t", "")
+    return t
 
 # ==========================================
 # 3. BACKEND
@@ -58,10 +60,8 @@ def get_connection():
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-    # Get all records as strings to be safe
     raw_data = sheet.get_all_records(expected_headers=[])
     df = pd.DataFrame(raw_data)
-    # Force everything to string immediately
     df = df.astype(str)
     return df
 
@@ -84,6 +84,7 @@ except Exception as e:
 
 def search_names(search_term: str):
     if not search_term: return existing_names
+    # Simple search for the dropdown (keeps spaces for readability)
     matches = [n for n in existing_names if search_term in n]
     if search_term not in matches: matches.insert(0, search_term)
     return matches
@@ -96,17 +97,17 @@ with c_title: st.title("📋 سامانه مدیریت هوشمند")
 with c_count: st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 THE FIXED IMPORT
+# 📥 IMPORT (WITH FINGERPRINT MATCHING)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهایی)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Smart Farsi Matching)"):
     uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
-    debug_mode = st.checkbox("🐞 نمایش جزئیات دیباگ (برای پیدا کردن مشکل)", value=False)
+    debug_mode = st.checkbox("🐞 نمایش جزئیات دیباگ", value=False)
     
     if uploaded_file:
         try:
-            # 1. READ EXCEL & NUKE EVERYTHING TO STRING
+            # 1. READ EXCEL
             up_df = pd.read_excel(uploaded_file, dtype=str)
-            up_df = up_df.fillna("").astype(str) # Double tap to be sure
+            up_df = up_df.fillna("").astype(str)
             up_df.columns = [clean_str(c) for c in up_df.columns]
 
             # 2. MAP COLUMNS
@@ -120,13 +121,16 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهای�
             col_city = c2.selectbox("ستون 'شهر':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'شهر')))
             col_prov = c3.selectbox("ستون 'استان':", up_df.columns, index=up_df.columns.get_loc(find_col(up_df.columns, 'استان')))
 
-            # 3. BUILD INDEX (CLEANED)
+            # 3. BUILD INDEX USING FINGERPRINTS
+            # Key = Crushed Name (no spaces), Value = List of {idx, data}
             sheet_index = {}
             for idx, row in df.iterrows():
                 nm = clean_str(row.get('اسم', ''))
                 if nm:
-                    if nm not in sheet_index: sheet_index[nm] = []
-                    sheet_index[nm].append({'idx': idx + 2, 'data': row})
+                    # ✨ MAGIC HERE: Create Fingerprint Key
+                    fingerprint = get_fingerprint(nm)
+                    if fingerprint not in sheet_index: sheet_index[fingerprint] = []
+                    sheet_index[fingerprint].append({'idx': idx + 2, 'data': row})
 
             # 4. RUN COMPARISON
             rows_to_add = []
@@ -135,24 +139,27 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهای�
 
             for i, row in up_df.iterrows():
                 u_name = clean_str(row[col_name])
-                u_city = clean_str(row[col_city])
-                u_prov = clean_str(row[col_prov])
-
                 if not u_name: continue
 
-                # LOOKUP
-                candidates = sheet_index.get(u_name, [])
+                # ✨ MAGIC HERE: Search using Fingerprint
+                u_key = get_fingerprint(u_name)
+                
+                candidates = sheet_index.get(u_key, [])
                 match_found = None
+
+                # Normalize Excel Location for comparison
+                u_city = clean_str(row[col_city])
+                u_prov = clean_str(row[col_prov])
 
                 # Find Compatible Match
                 for cand in candidates:
                     s_data = cand['data']
                     s_city = clean_str(s_data.get('شهر', ''))
                     s_prov = clean_str(s_data.get('استان', ''))
-
-                    # Match Logic: Empty is Wildcard
-                    city_ok = (s_city == "") or (s_city == u_city) or (u_city == "")
-                    prov_ok = (s_prov == "") or (s_prov == u_prov) or (u_prov == "")
+                    
+                    # We also fingerprint cities/provs to ignore spaces there too!
+                    city_ok = (get_fingerprint(s_city) == "") or (get_fingerprint(s_city) == get_fingerprint(u_city)) or (u_city == "")
+                    prov_ok = (get_fingerprint(s_prov) == "") or (get_fingerprint(s_prov) == get_fingerprint(u_prov)) or (u_prov == "")
 
                     if city_ok and prov_ok:
                         match_found = cand
@@ -164,14 +171,13 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهای�
                     s_data = match_found['data']
                     merged = []
                     do_update = False
-                    
                     debug_info = []
 
                     for h in all_headers:
                         s_val = clean_str(s_data.get(h, ""))
                         
                         e_val = ""
-                        if h == 'اسم': e_val = u_name
+                        if h == 'اسم': e_val = u_name # Use the Excel name formatting if needed, or keep original? Usually keep original is safer, but user might want fixes.
                         elif h in up_df.columns: e_val = clean_str(row[h])
 
                         # UPDATE ONLY IF SHEET EMPTY & EXCEL HAS DATA
@@ -179,16 +185,14 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهای�
                             merged.append(e_val)
                             do_update = True
                             if debug_mode and len(log_messages) < 10:
-                                debug_info.append(f"ستون '{h}': خالی -> {e_val}")
+                                debug_info.append(f"{h}: {e_val}")
                         else:
                             merged.append(s_val)
                     
                     if do_update:
                         rows_to_update.append((r_idx, merged))
                         if debug_mode and len(log_messages) < 10:
-                            log_messages.append(f"🔄 آپدیت '{u_name}': {', '.join(debug_info)}")
-                    elif debug_mode and len(log_messages) < 10:
-                         log_messages.append(f"ℹ️ '{u_name}' پیدا شد ولی اطلاعات جدیدی در اکسل نبود.")
+                            log_messages.append(f"🔄 (تطبیق فضا) '{u_name}': {', '.join(debug_info)}")
 
                 else:
                     # ADD NEW
@@ -199,13 +203,12 @@ with st.expander("📥 افزودن و تکمیل گروهی (نسخه نهای�
                         else: new_row.append("")
                     rows_to_add.append(new_row)
                     if debug_mode and len(log_messages) < 10:
-                        log_messages.append(f"➕ افزودن جدید '{u_name}' (چون در شیت نبود یا شهر متفاوت بود)")
+                        log_messages.append(f"➕ جدید: '{u_name}'")
 
             # 5. EXECUTE
             if debug_mode:
-                st.info("🐞 گزارش دیباگ (۱۰ مورد اول):")
-                for msg in log_messages:
-                    st.text(msg)
+                st.info("🐞 گزارش دیباگ:")
+                for msg in log_messages: st.text(msg)
 
             if rows_to_add or rows_to_update:
                 c_a, c_b = st.columns(2)
@@ -244,7 +247,6 @@ if st.session_state.active_name is None:
         st.session_state.active_name = selected_value
         st.rerun()
 else:
-    # FORM LOGIC (Keeping it simple for brevity as this part works)
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
@@ -270,10 +272,9 @@ else:
     with st.form("main_form"):
         st.markdown("### اطلاعات")
         draw(GROUP_PERSONAL, 3)
-        draw(GROUP_INCIDENT, 1) # Vertical
+        draw(GROUP_INCIDENT, 1)
         draw(GROUP_OTHER, 2)
         
-        # Catch all
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
         rem = [h for h in form_headers if h not in used]
         if rem: draw(rem, 3)
@@ -282,7 +283,6 @@ else:
             client = get_connection()
             sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
             
-            # Reconstruct row
             row_data = []
             for h in all_headers:
                 if h == 'اسم': row_data.append(locked_name)
