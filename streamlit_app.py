@@ -30,7 +30,7 @@ st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide"
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
-    label, input, textarea, .stSelectbox, .stMarkdown, .stToast, .stExpander { direction: rtl !important; text-align: right !important; }
+    label, input, textarea, .stSelectbox, .stMarkdown, .stToast, .stExpander, .stMetric { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; border-radius: 8px; font-weight: bold; transition: 0.3s; }
     .stButton button:hover { background-color: #1557b0; }
     .st-emotion-cache-16idsys p { display: none; } 
@@ -63,8 +63,7 @@ if 'active_name' not in st.session_state:
 try:
     df = get_data()
     all_headers = df.columns.tolist()
-    # Note: 'اسم' is excluded from form_headers to prevent changing the key, 
-    # so it won't appear in the Personal Info inputs even if listed in GROUP_PERSONAL.
+    # Note: 'اسم' is excluded from form_headers
     form_headers = [h for h in all_headers if h and h != 'اسم']
     existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 except Exception as e:
@@ -76,6 +75,16 @@ def search_names(search_term: str):
     matches = [n for n in existing_names if search_term in n]
     if search_term not in matches: matches.insert(0, search_term)
     return matches
+
+# ==========================================
+# HEADER SECTION (Title + Counter)
+# ==========================================
+c_title, c_count = st.columns([5, 1])
+with c_title:
+    st.title("📋 سامانه مدیریت هوشمند")
+with c_count:
+    # ✅ Total Row Counter
+    st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
 # SCREEN 1: SEARCH
