@@ -5,14 +5,13 @@ from google.oauth2.service_account import Credentials
 from streamlit_searchbox import st_searchbox
 import time
 
-# 1. Setup & RTL
+# 1. Setup & RTL Config
 st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
+
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
     label, input, textarea, .stSelectbox, .stMarkdown { direction: rtl !important; text-align: right !important; }
     .stButton button { width: 100%; background-color: #1a73e8; color: white; height: 3em; }
-    /* Hide the search box label if needed */
-    .st-emotion-cache-16idsys p { display: none; } 
 </style>""", unsafe_allow_html=True)
 
 # 2. Connection
@@ -23,120 +22,145 @@ def get_connection():
     client = gspread.authorize(creds)
     return client
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=5) # Short cache for multi-user updates
 def get_data():
     client = get_connection()
     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
     return pd.DataFrame(sheet.get_all_records())
 
-# 3. Session State Management (The Fix)
-if 'selected_name' not in st.session_state:
-    st.session_state.selected_name = None
+# 3. Initialize Session State
+# This acts as our "Temporary Memory" while you are typing
+if 'active_name' not in st.session_state:
+    st.session_state.active_name = None
 
-# Function to handle search logic
+# 4. Search Function
 df = get_data()
 all_headers = df.columns.tolist()
+# Filter out empty headers and 'اسم'
+form_headers = [h for h in all_headers if h and h != 'اسم']
 existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 
 def search_names(search_term: str):
     if not search_term:
         return existing_names
     matches = [n for n in existing_names if search_term in n]
-    # Always allow the new name to be selectable
+    # CRITICAL: Always offer the search term itself as an option (for new names)
     if search_term not in matches:
         matches.insert(0, search_term)
     return matches
 
-#st.title("📋 سامانه مدیریت هوشمند")
+st.title("📋 سامانه مدیریت هوشمند")
 
 # ==========================================
-# PART A: SEARCH MODE (Only show if no name selected)
+# SEARCH SECTION
 # ==========================================
-if st.session_state.selected_name is None:
-    st.info("👇 نام را جستجو کنید یا نام جدید بنویسید و **اینتر بزنید**")
+st.info("👇 نام را انتخاب کنید (یا نام جدید بنویسید و روی آن کلیک کنید)")
+
+# We use a callback logic here. 
+# If the search box output differs from our 'active_name', we know the user switched people.
+selected_search = st_searchbox(
+    search_names,
+    key="sb_search",
+    placeholder="جستجو یا ثبت نام جدید..."
+)
+
+# 5. STATE MANAGER (The Magic Fix)
+# This block runs every time something changes.
+# It checks: "Did the user pick a NEW person in the search box?"
+if selected_search and selected_search != st.session_state.active_name:
     
-    # The Search Box
-    selected_value = st_searchbox(
-        search_names,
-        key="search_input",
-        placeholder="جستجوی نام..."
-    )
-
-    # LOCK LOGIC: If user picked something, save to session and RERUN immediately
-    if selected_value:
-        st.session_state.selected_name = selected_value
-        st.rerun()
-
-# ==========================================
-# PART B: FORM MODE (Show this when name is locked)
-# ==========================================
-else:
-    # Get the locked name
-    locked_name = st.session_state.selected_name
+    # 1. Update the Active Name
+    st.session_state.active_name = selected_search
     
-    # Check if Edit or New
-    is_edit_mode = locked_name in existing_names
-    
-    # Fetch data if editing
-    current_data = {}
-    if is_edit_mode:
-        current_data = df[df['اسم'] == locked_name].iloc[0].to_dict()
-
-    # HEADER SECTION
-    c1, c2 = st.columns([5, 1])
-    with c1:
-        if is_edit_mode:
-            st.success(f"📝 در حال ویرایش: **{locked_name}**")
-        else:
-            st.warning(f"🆕 ثبت اطلاعات جدید برای: **{locked_name}**")
-    with c2:
-        # Button to Cancel/Change User
-        if st.button("❌ بازگشت"):
-            st.session_state.selected_name = None
-            st.rerun()
-
-    # THE FORM (Now it will never disappear!)
-    with st.form("entry_form"):
-        st.markdown("---")
+    # 2. Fetch Data from DB (if exists)
+    if selected_search in existing_names:
+        user_row = df[df['اسم'] == selected_search].iloc[0].to_dict()
+        is_new = False
+    else:
+        user_row = {}
+        is_new = True
         
-        # Dynamic Columns
-        valid_headers = [h for h in all_headers if h != 'اسم']
-        cols = st.columns(3)
-        user_inputs = {}
+    # 3. Load Data into Form Keys
+    # We manually set the value of every input box in session_state
+    for header in form_headers:
+        key_name = f"field_{header}"
+        st.session_state[key_name] = str(user_row.get(header, ""))
+    
+    # 4. Rerun to refresh the form with new data
+    st.rerun()
 
-        for i, header in enumerate(valid_headers):
+# If user clears the box, we clear the form
+if not selected_search and st.session_state.active_name:
+    st.session_state.active_name = None
+    st.rerun()
+
+# ==========================================
+# FORM SECTION
+# ==========================================
+# Only show form if we have an active name locked in memory
+if st.session_state.active_name:
+    
+    # Determine Mode for UI
+    is_edit = st.session_state.active_name in existing_names
+    
+    if is_edit:
+        st.success(f"✏️ در حال ویرایش: **{st.session_state.active_name}**")
+    else:
+        st.warning(f"🆕 در حال ثبت نام جدید: **{st.session_state.active_name}**")
+
+    with st.form("entry_form"):
+        # Dynamic Columns
+        cols = st.columns(3)
+        
+        # We generate input boxes that are TIED to session_state keys
+        for i, header in enumerate(form_headers):
+            key_name = f"field_{header}"
+            
+            # Ensure key exists (safety check)
+            if key_name not in st.session_state:
+                st.session_state[key_name] = ""
+                
             with cols[i % 3]:
-                val = current_data.get(header, "")
-                user_inputs[header] = st.text_input(header, value=str(val))
+                # Notice: We do NOT use 'value='. We use 'key='.
+                # Streamlit automatically fills the box from st.session_state[key_name]
+                st.text_input(header, key=key_name)
 
         st.markdown("---")
-        submitted = st.form_submit_button("💾 ذخیره نهایی")
+        submitted = st.form_submit_button("💾 ذخیره تغییرات")
 
         if submitted:
             try:
                 client = get_connection()
                 sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 
+                # Collect data from Session State
                 final_row = []
                 for header in all_headers:
                     if header == 'اسم':
-                        final_row.append(locked_name)
+                        final_row.append(st.session_state.active_name)
                     else:
-                        final_row.append(user_inputs.get(header, ""))
+                        # Grab the value the user just typed into the box
+                        final_row.append(st.session_state.get(f"field_{header}", ""))
                 
-                if is_edit_mode:
-                    cell = sheet.find(locked_name)
+                if is_edit:
+                    cell = sheet.find(st.session_state.active_name)
                     sheet.update(range_name=f"A{cell.row}", values=[final_row])
-                    st.toast("اطلاعات بروزرسانی شد", icon='🎉')
+                    st.toast("✅ بروزرسانی موفقیت‌آمیز بود", icon='🎉')
                 else:
                     sheet.append_row(final_row)
-                    st.toast("رکورد جدید ثبت شد", icon='✨')
+                    st.toast("✅ ثبت نام جدید انجام شد", icon='✨')
                 
-                # Clear session and reload
-                st.session_state.selected_name = None
+                # Clear cache to see update immediately
                 get_data.clear()
-                time.sleep(1)
-                st.rerun()
+                
+                # Optional: Clear form after save? 
+                # Uncomment next 2 lines if you want to reset after save
+                # st.session_state.active_name = None
+                # st.rerun() 
                 
             except Exception as e:
-                st.error(f"خطا: {e}")
+                st.error(f"خطا در ذخیره‌سازی: {e}")
+
+elif selected_search:
+    # Fallback if state lag happens (rare)
+    st.spinner("در حال بارگذاری...")
