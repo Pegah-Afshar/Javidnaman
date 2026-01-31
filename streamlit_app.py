@@ -27,7 +27,7 @@ GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان
 
 NUMERIC_FIELDS = ["سن"]
 
-st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
+st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
@@ -83,7 +83,7 @@ def search_names(search_term: str):
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
-    st.title("📋 سامانه مدیریت هوشمند")
+    st.title("📋 ")
 with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
