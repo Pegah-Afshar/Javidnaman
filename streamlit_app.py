@@ -9,10 +9,8 @@ import time
 # 1. CONFIGURATION
 # ==========================================
 
-# Personal Info
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# Incident Info (STRICT VERTICAL ORDER)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -24,7 +22,6 @@ GROUP_INCIDENT = [
     "آرامگاه"
 ]
 
-# Other Info
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
@@ -65,7 +62,7 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    df.columns = df.columns.astype(str).str.strip() # Clean headers
+    df.columns = df.columns.astype(str).str.strip() 
     
     all_headers = df.columns.tolist()
     form_headers = [h for h in all_headers if h and h != 'اسم']
@@ -90,98 +87,135 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 🆕 ADVANCED BULK IMPORT (CHECK NAME + CITY + PROVINCE)
+# 📥 ADVANCED IMPORT (MERGE & ADD)
 # ==========================================
-with st.expander("📥 افزودن گروهی با بررسی شهر/استان (Smart Import)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Add & Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
-            # ✅ FIX 1: Add .fillna("") to replace 'nan' with empty strings immediately
             up_df = pd.read_excel(uploaded_file).fillna("")
-            
-            # Clean headers
             up_df.columns = up_df.columns.astype(str).str.strip()
-            
-            # Ensure all data is string (to avoid 'nan' being treated as float)
             up_df = up_df.astype(str)
 
-            # Helper to find default column index
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords):
                         return i
                 return 0
 
-            # 1. Map Columns
+            st.info("لطفاً ستون‌های کلیدی را مشخص کنید تا افراد تکراری شناسایی شوند:")
             c1, c2, c3 = st.columns(3)
             with c1:
-                col_name = st.selectbox("ستون 'نام' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['اسم', 'name']))
+                col_name = st.selectbox("ستون 'نام':", up_df.columns, index=find_col_index(up_df.columns, ['اسم', 'name']))
             with c2:
-                col_city = st.selectbox("ستون 'شهر' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['شهر', 'city']))
+                col_city = st.selectbox("ستون 'شهر':", up_df.columns, index=find_col_index(up_df.columns, ['شهر', 'city']))
             with c3:
-                col_prov = st.selectbox("ستون 'استان' در فایل:", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
+                col_prov = st.selectbox("ستون 'استان':", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
 
-            # 2. Build Database Fingerprints
-            existing_fingerprints = set()
+            # --- STEP 1: INDEX EXISTING DATA ---
+            # We map (Name, City, Prov) -> to its Row Number and Data
+            # This helps us find "Who to Update"
+            existing_map = {}
             for index, row in df.iterrows():
-                # ✅ FIX 2: Strict stripping of spaces to catch "Ali " vs "Ali"
                 f_name = str(row.get('اسم', '')).strip()
                 f_city = str(row.get('شهر', '')).strip()
                 f_prov = str(row.get('استان', '')).strip()
-                existing_fingerprints.add((f_name, f_city, f_prov))
+                # Store row index (index + 2 because sheet starts at row 2) and the data
+                existing_map[(f_name, f_city, f_prov)] = {'row_idx': index + 2, 'data': row}
 
-            # 3. Analyze Upload File
-            new_rows_to_add = []
-            
+            # --- STEP 2: ANALYZE EXCEL FILE ---
+            rows_to_append = [] # New people
+            rows_to_update = [] # Existing people with new info
+
             for index, row in up_df.iterrows():
-                # Use str().strip() on upload data too
                 u_name = str(row[col_name]).strip()
                 u_city = str(row[col_city]).strip()
                 u_prov = str(row[col_prov]).strip()
                 
-                # If name is basically empty or "nan", skip it
-                if not u_name or u_name.lower() == 'nan':
-                    continue
-
-                # CHECK: Does this exact combination exist?
-                if (u_name, u_city, u_prov) not in existing_fingerprints:
-                    # Create the row data
-                    new_data_row = []
-                    for header in all_headers:
-                        if header == 'اسم':
-                            new_data_row.append(u_name)
-                        elif header == 'شهر':
-                            new_data_row.append(u_city)
-                        elif header == 'استان':
-                            new_data_row.append(u_prov)
-                        else:
-                            if header in up_df.columns:
-                                val = str(row[header]).strip()
-                                # Double check to ensure no 'nan' slips through
-                                new_data_row.append(val if val.lower() != 'nan' else "")
-                            else:
-                                new_data_row.append("")
-                    
-                    new_rows_to_add.append(new_data_row)
-
-            # 4. Show Results
-            if new_rows_to_add:
-                st.info(f"📊 فایل شما {len(up_df)} ردیف دارد.")
-                st.warning(f"🆕 تعداد {len(new_rows_to_add)} نفر جدید شناسایی شدند.")
+                if not u_name or u_name.lower() == 'nan': continue
                 
-                if st.button(f"🚀 افزودن {len(new_rows_to_add)} نفر به دیتابیس"):
-                    with st.status("در حال آپلود...", expanded=True) as status:
+                key = (u_name, u_city, u_prov)
+
+                # --- SCENARIO A: NEW PERSON ---
+                if key not in existing_map:
+                    new_row = []
+                    for header in all_headers:
+                        if header == 'اسم': new_row.append(u_name)
+                        elif header == 'شهر': new_row.append(u_city)
+                        elif header == 'استان': new_row.append(u_prov)
+                        else:
+                            val = str(row[header]).strip() if header in up_df.columns else ""
+                            new_row.append(val)
+                    rows_to_append.append(new_row)
+                
+                # --- SCENARIO B: SAME PERSON (CHECK FOR MISSING INFO) ---
+                else:
+                    existing_record = existing_map[key]
+                    current_sheet_data = existing_record['data']
+                    row_number = existing_record['row_idx']
+                    
+                    # We build a "Merged Row"
+                    merged_row = []
+                    has_new_info = False
+                    
+                    for header in all_headers:
+                        current_val = str(current_sheet_data.get(header, "")).strip()
+                        
+                        # Find value in Excel
+                        excel_val = ""
+                        if header == 'اسم': excel_val = u_name
+                        elif header == 'شهر': excel_val = u_city
+                        elif header == 'استان': excel_val = u_prov
+                        elif header in up_df.columns: excel_val = str(row[header]).strip()
+                        
+                        # LOGIC: If Sheet is Empty AND Excel has data -> Update it!
+                        if current_val == "" and excel_val != "":
+                            merged_row.append(excel_val)
+                            has_new_info = True
+                        else:
+                            # Otherwise keep the Sheet data (Sheet has priority if matched)
+                            merged_row.append(current_val)
+                    
+                    if has_new_info:
+                        rows_to_update.append((row_number, merged_row))
+
+            # --- STEP 3: EXECUTE ---
+            if rows_to_append or rows_to_update:
+                c_new, c_upd = st.columns(2)
+                with c_new:
+                    st.warning(f"🆕 افراد جدید برای افزودن: {len(rows_to_append)}")
+                with c_upd:
+                    st.info(f"🔄 افراد موجود با اطلاعات جدید (تکمیل نواقص): {len(rows_to_update)}")
+                
+                if st.button("🚀 شروع عملیات (افزودن و بروزرسانی)"):
+                    with st.status("در حال پردازش...", expanded=True) as status:
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-                        sheet.append_rows(new_rows_to_add)
                         
-                        status.update(label="✅ تمام شد!", state="complete")
+                        # 1. Add New Rows (Fast Batch)
+                        if rows_to_append:
+                            status.write("✍️ افزودن افراد جدید...")
+                            sheet.append_rows(rows_to_append)
+                        
+                        # 2. Update Existing Rows (One by One - Safest for updates)
+                        if rows_to_update:
+                            status.write("🔄 تکمیل اطلاعات ناقص افراد موجود...")
+                            # To avoid API limits on massive files, we verify size
+                            if len(rows_to_update) > 50:
+                                st.warning("تعداد بروزرسانی‌ها زیاد است، ممکن است کمی طول بکشد...")
+                            
+                            for r_num, r_data in rows_to_update:
+                                # Update the whole row A{n}:Z{n}
+                                sheet.update(range_name=f"A{r_num}", values=[r_data])
+                                time.sleep(0.5) # Slight pause to be kind to API
+                        
+                        status.update(label="✅ انجام شد!", state="complete")
                         get_data.clear()
                         time.sleep(2)
                         st.rerun()
             else:
-                st.success("✅ هیچ داده جدیدی یافت نشد. تمام افراد (با شهر و استان مشابه) قبلاً ثبت شده‌اند.")
+                st.success("✅ هیچ داده جدیدی یافت نشد. تمام اطلاعات کامل و به‌روز است.")
 
         except Exception as e:
             st.error(f"خطا: {e}")
