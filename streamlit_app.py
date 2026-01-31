@@ -58,7 +58,7 @@ if st.session_state.active_name is None:
     
     selected_value = st_searchbox(
         search_names,
-        key="search_box_main",
+        key="search_box_main",  # <--- We need to clear this key later!
         placeholder="نام مورد نظر را تایپ کنید..."
     )
 
@@ -83,12 +83,16 @@ else:
     
     with c_btn:
         if st.button("❌ تغییر نام"):
-            # Clear Inputs Logic
+            # Clear Inputs
             for header in form_headers:
                 key = f"input_{header}"
                 if key in st.session_state:
                     del st.session_state[key]
             
+            # Clear Search Box Memory (Important!)
+            if "search_box_main" in st.session_state:
+                del st.session_state["search_box_main"]
+
             st.session_state.active_name = None
             st.rerun()
 
@@ -115,12 +119,11 @@ else:
         if submitted:
             try:
                 # ---------------------------------------------------------
-                # STEP 1: CHECK FOR CHANGES (Optimization)
+                # STEP 1: CHECK FOR CHANGES
                 # ---------------------------------------------------------
                 changes_detected = False
                 
                 if is_edit_mode:
-                    # Compare what user typed vs what is in database
                     for header in form_headers:
                         old_val = str(current_data.get(header, "")).strip()
                         new_val = user_inputs.get(header, "").strip()
@@ -128,7 +131,6 @@ else:
                             changes_detected = True
                             break
                 else:
-                    # New names are always "changes"
                     changes_detected = True
 
                 # ---------------------------------------------------------
@@ -137,7 +139,6 @@ else:
                 if not changes_detected:
                     st.info("ℹ️ تغییری در اطلاعات مشاهده نشد. (ذخیره انجام نشد)")
                 else:
-                    # Only connect to Google if there are actual changes
                     client = get_connection()
                     sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                     
@@ -158,22 +159,24 @@ else:
                     get_data.clear()
 
                 # ---------------------------------------------------------
-                # STEP 3: CLEANUP & RESET (Runs in both cases)
+                # STEP 3: CLEANUP & RESET (FIXED)
                 # ---------------------------------------------------------
                 
-                # 1. Forcefully Clear Input Box Memory
+                # A. Clear Form Input Boxes
                 for header in form_headers:
                     key = f"input_{header}"
                     if key in st.session_state:
                         del st.session_state[key]
                 
-                # 2. Reset Name
+                # B. CRITICAL FIX: Clear the Search Box Memory
+                if "search_box_main" in st.session_state:
+                    del st.session_state["search_box_main"]
+                
+                # C. Reset Name
                 st.session_state.active_name = None
                 
-                # 3. Wait 2 seconds so user sees the message
+                # D. Wait and Rerun
                 time.sleep(2)
-                
-                # 4. Reload to search screen
                 st.rerun()
                 
             except Exception as e:
