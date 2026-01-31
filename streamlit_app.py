@@ -11,6 +11,8 @@ import time
 
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
+# ✅ UPDATED: The form will generate boxes in EXACTLY this order.
+# (Right to Left, Top to Bottom)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -77,13 +79,13 @@ def search_names(search_term: str):
     return matches
 
 # ==========================================
-# HEADER SECTION (Title + Counter)
+# HEADER SECTION
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
     st.title("📋")
 with c_count:
-    # ✅ Total Row Counter
+    # Total Row Counter
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
@@ -124,9 +126,9 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # --- HELPER FUNCTION ---
+    # --- HELPER FUNCTION (Respects List Order) ---
     def draw_inputs(headers_list, container, data_dict, inputs_dict):
-        # Only draw if the header actually exists in the Google Sheet
+        # This list comprehension PRESERVES the order of 'headers_list'
         valid_headers = [h for h in headers_list if h in form_headers]
         if not valid_headers: return
         
@@ -156,7 +158,7 @@ else:
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
         draw_inputs(GROUP_OTHER, st, current_data, user_inputs)
 
-        # SECTION 4: CATCH-ALL (Everything else)
+        # SECTION 4: CATCH-ALL
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
             st.markdown('<div class="section-header">📂 ستون‌های دسته‌بندی نشده</div>', unsafe_allow_html=True)
