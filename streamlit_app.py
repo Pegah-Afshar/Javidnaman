@@ -10,7 +10,7 @@ import numpy as np
 # 1. CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title=" جاویدنامان", 
+    page_title="مدیریت جاویدنامان", 
     layout="wide", 
     page_icon="📋",
     initial_sidebar_state="collapsed"
@@ -22,14 +22,10 @@ GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان"
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 NUMERIC_FIELDS = ["سن"]
 
-# 🎨 CLEAN CSS (Safe for Laptop & Phone)
+# 🎨 CLEAN CSS
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
-    
-    /* Input Labels */
     .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-weight: bold; color: #444; }
-    
-    /* Custom Header Style */
     .custom-header {
         color: #1a73e8;
         font-size: 1.1rem;
@@ -38,11 +34,7 @@ st.markdown("""<style>
         margin-bottom: 5px;
         border-bottom: 1px solid #eee;
     }
-    
-    /* Toolbar Button Styling */
-    div[data-testid="stHorizontalBlock"] button {
-        border-radius: 8px;
-    }
+    div[data-testid="stHorizontalBlock"] button { border-radius: 8px; }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
@@ -70,10 +62,7 @@ def get_fingerprint(text):
     return t
 
 def clear_form_state():
-    """Forcefully clears all input boxes"""
-    for key in list(st.session_state.keys()):
-        if key.startswith("input_"):
-            del st.session_state[key]
+    """Forcefully clears active name to reset the view"""
     st.session_state.active_name = None
 
 # ==========================================
@@ -112,9 +101,8 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 🛠️ TOP TOOLBAR (Visible on Laptop & Phone)
+# 🛠️ TOP TOOLBAR
 # ==========================================
-# [Refresh] [Backup] [Import]
 c_tools_1, c_tools_2, c_tools_3 = st.columns([1, 1, 2])
 
 with c_tools_1:
@@ -124,24 +112,16 @@ with c_tools_1:
 
 with c_tools_2:
     csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button(
-        label="📥 بکاپ",
-        data=csv,
-        file_name=f"Backup_{time.strftime('%Y%m%d')}.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+    st.download_button("📥 بکاپ", csv, f"Backup_{time.strftime('%Y%m%d')}.csv", "text/csv", use_container_width=True)
 
 with c_tools_3:
     with st.expander("📤 ایمپورت اکسل"):
         uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
-        
         if uploaded_file:
             try:
-                up_df = pd.read_excel(uploaded_file, dtype=str)
-                up_df = up_df.fillna("").astype(str)
+                up_df = pd.read_excel(uploaded_file, dtype=str).fillna("").astype(str)
                 up_df.columns = [clean_str(c) for c in up_df.columns]
-
+                
                 c_idx = lambda cols, k: next((i for i, c in enumerate(cols) if k in c), 0)
                 col_name = st.selectbox("ستون نام", up_df.columns, index=c_idx(up_df.columns, 'اسم'))
                 col_city = st.selectbox("ستون شهر", up_df.columns, index=c_idx(up_df.columns, 'شهر'))
@@ -161,11 +141,9 @@ with c_tools_3:
                 for i, row in up_df.iterrows():
                     u_name = clean_str(row[col_name])
                     if not u_name: continue
-                    
                     u_key = get_fingerprint(u_name)
                     candidates = sheet_index.get(u_key, [])
                     match_found = None
-                    
                     u_city = clean_str(row[col_city])
                     u_prov = clean_str(row[col_prov])
 
@@ -188,7 +166,6 @@ with c_tools_3:
                             e_val = ""
                             if h == 'اسم': e_val = u_name
                             elif h in up_df.columns: e_val = format_age(row[h]) if h == 'سن' else clean_str(row[h])
-                            
                             if s_val == "" and e_val != "":
                                 merged.append(e_val)
                                 do_upd = True
@@ -217,11 +194,10 @@ with c_tools_3:
                         st.rerun()
                 else:
                     st.success("✅ هماهنگ")
-
             except Exception as e:
                 st.error(f"خطا: {e}")
 
-st.divider() # Clean separator
+st.divider()
 
 # ==========================================
 # 5. MAIN APP INTERFACE
@@ -232,27 +208,23 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-# --- SEARCH MODE ---
 if st.session_state.active_name is None:
-    # Use standard container to ensure visibility on laptop
+    # --- SEARCH VIEW ---
     with st.container():
         c_head1, c_head2 = st.columns([4, 1])
         with c_head1: st.subheader("🔍 جستجوی پرونده")
         with c_head2: st.caption(f"تعداد: {len(existing_names)}")
         
-        # Search Box is here, clearly visible
         selected_value = st_searchbox(
             search_names, 
             key="search_box_main", 
             placeholder="نام را تایپ کنید..."
         )
-        
         if selected_value:
             st.session_state.active_name = selected_value
             st.rerun()
-
-# --- FORM MODE ---
 else:
+    # --- FORM VIEW ---
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
@@ -262,7 +234,7 @@ else:
         else: st.warning(f"🆕 جدید: **{locked_name}**")
     with c_close:
         if st.button("❌", use_container_width=True):
-            clear_form_state() # Force Clear!
+            clear_form_state()
             st.rerun()
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
@@ -270,19 +242,19 @@ else:
     def draw_section(title, headers, cols=3):
         valid = [h for h in headers if h in form_headers]
         if not valid: return
-        
         st.markdown(f'<div class="custom-header">{title}</div>', unsafe_allow_html=True)
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i % cols]:
                 val = current_data.get(h, "")
                 if h == 'سن': val = format_age(val)
-                # IMPORTANT: key must be dynamic to allow clearing
-                st.text_input(h, value=str(val), key=f"input_{h}")
+                # 🔥 KEY FIX: Unique key per name ensures fresh boxes on new entry
+                unique_key = f"input_{h}_{locked_name}"
+                st.text_input(h, value=str(val), key=unique_key)
 
     with st.form("main_form"):
         draw_section("👤 اطلاعات فردی", GROUP_PERSONAL, 3)
-        draw_section("📍 اطلاعات واقعه", GROUP_INCIDENT, 2)
+        draw_section("📍 اطلاعات حادثه", GROUP_INCIDENT, 2)
         draw_section("🔗 سایر اطلاعات", GROUP_OTHER, 2)
         
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
@@ -296,7 +268,8 @@ else:
                 sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 row_data = []
                 for h in all_headers:
-                    val = st.session_state.get(f"input_{h}", "")
+                    # Fetch using the UNIQUE key
+                    val = st.session_state.get(f"input_{h}_{locked_name}", "")
                     if h == 'اسم': row_data.append(locked_name)
                     elif h == 'سن': row_data.append(format_age(val))
                     else: row_data.append(val)
@@ -310,9 +283,7 @@ else:
                 st.toast("اطلاعات ذخیره شد.", icon='✅')
                 get_data.clear()
                 time.sleep(1)
-                
-                # CRITICAL FIX: Clear inputs after save
-                clear_form_state()
+                clear_form_state() # Reset view
                 st.rerun()
             except Exception as e:
                 st.error(f"خطا در ذخیره سازی: {e}")
