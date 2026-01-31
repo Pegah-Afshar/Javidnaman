@@ -87,19 +87,19 @@ with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
 # ==========================================
-# 📥 SMART IMPORT (STRICT + LOOSE MATCHING)
+# 📥 INTELLIGENT IMPORT (CANDIDATE SEARCH)
 # ==========================================
-with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
+with st.expander("📥 افزودن و تکمیل گروهی (Intelligent Merge)"):
     uploaded_file = st.file_uploader("فایل اکسل خود را اینجا بکشید", type=["xlsx", "xls"])
     
     if uploaded_file:
         try:
-            # 1. Read & Clean Excel
-            up_df = pd.read_excel(uploaded_file).fillna("") # Converts 'nan' to ""
+            # 1. Read & Clean
+            up_df = pd.read_excel(uploaded_file).fillna("")
             up_df.columns = up_df.columns.astype(str).str.strip()
-            up_df = up_df.astype(str) # Force all data to string
+            up_df = up_df.astype(str)
 
-            # 2. Column Mapping
+            # 2. Column Selectors
             def find_col_index(columns, keywords):
                 for i, col in enumerate(columns):
                     if any(k in col for k in keywords): return i
@@ -114,28 +114,16 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
             with c3:
                 col_prov = st.selectbox("ستون 'استان':", up_df.columns, index=find_col_index(up_df.columns, ['استان', 'prov']))
 
-            # 3. Build Search Maps
-            # Map A: Strict Key (Name + City + Prov) -> Row Index
-            map_strict = {}
-            # Map B: Loose Key (Name Only) -> Row Index (ONLY IF City/Prov are empty in Sheet)
-            map_loose = {}
-
+            # 3. Build Name Index (Map Name -> List of Rows in Sheet)
+            # This handles duplicates in the sheet properly
+            name_index = {}
             for index, row in df.iterrows():
                 f_name = str(row.get('اسم', '')).strip()
-                f_city = str(row.get('شهر', '')).strip()
-                f_prov = str(row.get('استان', '')).strip()
-                row_idx = index + 2
-                
-                # Strict Map
-                map_strict[(f_name, f_city, f_prov)] = {'row_idx': row_idx, 'data': row}
-                
-                # Loose Map (Only valid if sheet location is missing)
-                if f_city == "" and f_prov == "":
-                    # If duplicate names exist with empty cities, we take the first one found
-                    if f_name not in map_loose:
-                        map_loose[f_name] = {'row_idx': row_idx, 'data': row}
+                if f_name not in name_index:
+                    name_index[f_name] = []
+                name_index[f_name].append({'row_idx': index + 2, 'data': row})
 
-            # 4. Analyze Excel Data
+            # 4. Process Excel Rows
             rows_to_append = []
             rows_to_update = []
 
@@ -145,38 +133,44 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                 u_prov = str(row[col_prov]).strip()
                 
                 if not u_name or u_name.lower() == 'nan': continue
+
+                # Is this name in our sheet?
+                candidate_list = name_index.get(u_name, [])
                 
-                strict_key = (u_name, u_city, u_prov)
+                matched_record = None
                 
-                target_record = None
+                # SEARCH for a "Compatible" record
+                for candidate in candidate_list:
+                    sheet_city = str(candidate['data'].get('شهر', '')).strip()
+                    sheet_prov = str(candidate['data'].get('استان', '')).strip()
+                    
+                    # LOGIC: Compatible if Sheet location is EMPTY or MATCHES Excel
+                    city_ok = (sheet_city == "") or (sheet_city == u_city)
+                    prov_ok = (sheet_prov == "") or (sheet_prov == u_prov)
+                    
+                    if city_ok and prov_ok:
+                        matched_record = candidate
+                        break # Found our person!
                 
-                # CHECK 1: Do we have an EXACT match?
-                if strict_key in map_strict:
-                    target_record = map_strict[strict_key]
-                
-                # CHECK 2: If not, do we have a LOOSE match? (Name matches, but Sheet had no location)
-                elif u_name in map_loose:
-                    target_record = map_loose[u_name]
-                
-                # LOGIC BRANCH
-                if target_record:
-                    # --- UPDATE EXISTING ---
-                    current_sheet_data = target_record['data']
-                    row_number = target_record['row_idx']
+                if matched_record:
+                    # --- UPDATE (MERGE) ---
+                    current_sheet_data = matched_record['data']
+                    row_number = matched_record['row_idx']
                     merged_row = []
                     has_new_info = False
                     
                     for header in all_headers:
                         current_val = str(current_sheet_data.get(header, "")).strip()
                         
-                        # Determine what value Excel has for this column
+                        # Get value from Excel
                         excel_val = ""
                         if header == 'اسم': excel_val = u_name
                         elif header == 'شهر': excel_val = u_city
                         elif header == 'استان': excel_val = u_prov
                         elif header in up_df.columns: excel_val = str(row[header]).strip()
                         
-                        # UPDATE LOGIC: Only overwrite if Sheet is empty & Excel has data
+                        # OVERWRITE LOGIC: 
+                        # If Sheet is Empty AND Excel has data -> Update
                         if current_val == "" and excel_val != "":
                             merged_row.append(excel_val)
                             has_new_info = True
@@ -188,7 +182,7 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
 
                 else:
                     # --- ADD NEW ---
-                    # Name is new, OR Name exists but locations mismatch (and sheet wasn't empty)
+                    # Name not found, OR found but locations contradicted (e.g. Sheet=Shiraz, Excel=Tehran)
                     new_row = []
                     for header in all_headers:
                         if header == 'اسم': new_row.append(u_name)
@@ -205,30 +199,32 @@ with st.expander("📥 افزودن و تکمیل گروهی (Smart Merge)"):
                 with c_new:
                     st.warning(f"🆕 افراد جدید: {len(rows_to_append)}")
                 with c_upd:
-                    st.info(f"🔄 تکمیل اطلاعات: {len(rows_to_update)}")
+                    st.info(f"🔄 بروزرسانی و تکمیل: {len(rows_to_update)}")
                 
-                if st.button("🚀 شروع عملیات"):
+                if st.button("🚀 اجرای عملیات"):
                     with st.status("در حال پردازش...", expanded=True) as status:
                         client = get_connection()
                         sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                         
+                        # 1. Add New
                         if rows_to_append:
                             status.write("✍️ افزودن ردیف‌های جدید...")
                             sheet.append_rows(rows_to_append)
                         
+                        # 2. Update Existing
                         if rows_to_update:
-                            status.write("🔄 بروزرسانی اطلاعات موجود...")
-                            if len(rows_to_update) > 50: st.caption("این مرحله ممکن است زمان‌بر باشد...")
+                            status.write("🔄 تکمیل اطلاعات ناقص...")
+                            if len(rows_to_update) > 50: st.caption("لطفاً صبر کنید...")
                             for r_num, r_data in rows_to_update:
                                 sheet.update(range_name=f"A{r_num}", values=[r_data])
-                                time.sleep(0.5) 
+                                time.sleep(0.4) 
                         
-                        status.update(label="✅ عملیات موفقیت‌آمیز بود!", state="complete")
+                        status.update(label="✅ تمام شد!", state="complete")
                         get_data.clear()
                         time.sleep(2)
                         st.rerun()
             else:
-                st.success("✅ هیچ داده جدیدی یافت نشد.")
+                st.success("✅ هیچ تغییر جدیدی لازم نیست (داده‌ها کامل هستند).")
 
         except Exception as e:
             st.error(f"خطا: {e}")
