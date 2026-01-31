@@ -6,7 +6,7 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # 1. Setup & RTL
-st.set_page_config(page_title=" جاویدنامان", layout="wide")
+st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; }
@@ -36,7 +36,6 @@ if 'active_name' not in st.session_state:
 # Load Data
 df = get_data()
 all_headers = df.columns.tolist()
-# Get headers for the form (everything except 'اسم')
 form_headers = [h for h in all_headers if h and h != 'اسم']
 existing_names = [x for x in df['اسم'].dropna().unique().tolist() if x]
 
@@ -49,18 +48,18 @@ def search_names(search_term: str):
         matches.insert(0, search_term)
     return matches
 
-#st.title("📋 سامانه مدیریت هوشمند")
+st.title("📋 سامانه مدیریت هوشمند")
 
 # ==========================================
 # SCREEN 1: SEARCH
 # ==========================================
 if st.session_state.active_name is None:
-    st.info("👇 نام **")
+    st.info("👇 نام را جستجو کنید یا نام جدید بنویسید و **روی آن کلیک کنید**")
     
     selected_value = st_searchbox(
         search_names,
         key="search_box_main",
-        placeholder="..."
+        placeholder="نام مورد نظر را تایپ کنید..."
     )
 
     if selected_value:
@@ -78,7 +77,7 @@ else:
     c_info, c_btn = st.columns([5, 1])
     with c_info:
         if is_edit_mode:
-            st.success(f"✏️ ویرایش : **{locked_name}**")
+            st.success(f"✏️ ویرایش اطلاعات: **{locked_name}**")
         else:
             st.warning(f"🆕 ثبت فرد جدید: **{locked_name}**")
     
@@ -108,52 +107,73 @@ else:
         for i, header in enumerate(form_headers):
             with cols[i % 3]:
                 val = current_data.get(header, "")
-                # Create input
                 user_inputs[header] = st.text_input(header, value=str(val), key=f"input_{header}")
 
         st.markdown("---")
-        submitted = st.form_submit_button("💾 ذخیره ")
+        submitted = st.form_submit_button("💾 ذخیره نهایی")
 
         if submitted:
             try:
-                client = get_connection()
-                sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
-                
-                final_row = []
-                for header in all_headers:
-                    if header == 'اسم':
-                        final_row.append(locked_name)
-                    else:
-                        final_row.append(user_inputs.get(header, ""))
+                # ---------------------------------------------------------
+                # STEP 1: CHECK FOR CHANGES (Optimization)
+                # ---------------------------------------------------------
+                changes_detected = False
                 
                 if is_edit_mode:
-                    cell = sheet.find(locked_name)
-                    sheet.update(range_name=f"A{cell.row}", values=[final_row])
+                    # Compare what user typed vs what is in database
+                    for header in form_headers:
+                        old_val = str(current_data.get(header, "")).strip()
+                        new_val = user_inputs.get(header, "").strip()
+                        if old_val != new_val:
+                            changes_detected = True
+                            break
                 else:
-                    sheet.append_row(final_row)
+                    # New names are always "changes"
+                    changes_detected = True
 
-                # =========================================
-                # ✅ SUCCESS & CLEANUP SECTION
-                # =========================================
+                # ---------------------------------------------------------
+                # STEP 2: SAVE OR SKIP
+                # ---------------------------------------------------------
+                if not changes_detected:
+                    st.info("ℹ️ تغییری در اطلاعات مشاهده نشد. (ذخیره انجام نشد)")
+                else:
+                    # Only connect to Google if there are actual changes
+                    client = get_connection()
+                    sheet = client.open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
+                    
+                    final_row = []
+                    for header in all_headers:
+                        if header == 'اسم':
+                            final_row.append(locked_name)
+                        else:
+                            final_row.append(user_inputs.get(header, ""))
+                    
+                    if is_edit_mode:
+                        cell = sheet.find(locked_name)
+                        sheet.update(range_name=f"A{cell.row}", values=[final_row])
+                    else:
+                        sheet.append_row(final_row)
+
+                    st.success("✅ اطلاعات با موفقیت ثبت شد! فرم در حال پاکسازی است...")
+                    get_data.clear()
+
+                # ---------------------------------------------------------
+                # STEP 3: CLEANUP & RESET (Runs in both cases)
+                # ---------------------------------------------------------
                 
-                # 1. Show Success Message
-                st.success("✅  ثبت شد ")
-                
-                # 2. Clear Google Cache
-                get_data.clear()
-                
-                # 3. Forcefully Clear Input Box Memory
-                # This ensures the boxes are EMPTY next time you open the form
+                # 1. Forcefully Clear Input Box Memory
                 for header in form_headers:
                     key = f"input_{header}"
                     if key in st.session_state:
                         del st.session_state[key]
                 
-                # 4. Reset Name
+                # 2. Reset Name
                 st.session_state.active_name = None
                 
-                # 5. Wait 2 seconds so user sees the message, then Reload
+                # 3. Wait 2 seconds so user sees the message
                 time.sleep(2)
+                
+                # 4. Reload to search screen
                 st.rerun()
                 
             except Exception as e:
