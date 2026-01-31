@@ -7,10 +7,10 @@ import time
 import numpy as np
 
 # ==========================================
-# 1. MOBILE CONFIGURATION (ULTRA COMPACT)
+# 1. CONFIGURATION
 # ==========================================
 st.set_page_config(
-    page_title="مدیریت", 
+    page_title="مدیریت جاویدنامان", 
     layout="wide", 
     page_icon="📋",
     initial_sidebar_state="collapsed"
@@ -22,38 +22,29 @@ GROUP_INCIDENT = ["تاریخ شمسی", "تاریخ میلادی", "استان"
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 NUMERIC_FIELDS = ["سن"]
 
-# 🎨 EXTREME CSS OPTIMIZATION
+# 🎨 CSS FOR HORIZONTAL TOOLBAR
 st.markdown("""<style>
-    /* Global Font & Direction */
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
     
-    /* REMOVE ALL TOP PADDING */
-    .block-container { 
-        padding-top: 0rem !important; 
-        padding-bottom: 2rem !important; 
-        margin-top: -20px !important;
+    /* Make buttons in the toolbar same height */
+    div[data-testid="column"] button {
+        width: 100%;
+        height: 42px; /* Fixed height for alignment */
+        border-radius: 8px;
     }
     
     /* Input Labels */
-    .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-size: 0.85rem; margin-bottom: -5px; }
+    .stTextInput label, .stSelectbox label { direction: rtl; text-align: right; font-weight: bold; color: #444; }
     
-    /* Full Width Buttons */
-    .stButton button { width: 100%; border-radius: 8px; font-weight: bold; padding: 0.25rem 0.5rem; }
-    
-    /* Hide Header/Footer completely */
-    header {display: none !important;}
-    footer {display: none !important;}
-    #MainMenu {display: none !important;}
-    
-    /* Form Card Compact Style */
-    .form-card {
-        background-color: #f8f9fa;
-        padding: 10px;
-        border-radius: 8px;
-        margin-bottom: 8px;
-        border: 1px solid #e0e0e0;
+    /* Custom Header Style */
+    .custom-header {
+        color: #1a73e8;
+        font-size: 1.1rem;
+        font-weight: bold;
+        margin-top: 15px;
+        margin-bottom: 5px;
+        border-bottom: 1px solid #eee;
     }
-    .form-card b { color: #1a73e8; font-size: 0.95rem; }
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
@@ -116,24 +107,28 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 🛡️ SIDEBAR (TOOLS)
+# 🛠️ TOP TOOLBAR (ROW LAYOUT)
 # ==========================================
-with st.sidebar:
-    st.markdown("### ⚙️ تنظیمات")
-    if st.button("🔄 رفرش"):
+# We use columns to put them in a row: [Refresh] [Backup] [Import Expander]
+c_tools_1, c_tools_2, c_tools_3 = st.columns([1, 1, 2])
+
+with c_tools_1:
+    if st.button("🔄 رفرش", use_container_width=True):
         get_data.clear()
         st.rerun()
-    
-    st.markdown("---")
-    
-    # BACKUP
+
+with c_tools_2:
     csv = df.to_csv(index=False).encode('utf-8-sig')
-    st.download_button("📥 دانلود بکاپ", csv, f"Backup_{time.strftime('%Y%m%d')}.csv", "text/csv")
+    st.download_button(
+        label="📥 دانلود بکاپ",
+        data=csv,
+        file_name=f"Backup_{time.strftime('%Y%m%d')}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
-    st.markdown("---")
-
-    # IMPORT TOOL
-    with st.expander("📥 ایمپورت اکسل"):
+with c_tools_3:
+    with st.expander("📤 ایمپورت اکسل (پیشرفته)"):
         uploaded_file = st.file_uploader("فایل اکسل", type=["xlsx", "xls"])
         
         if uploaded_file:
@@ -221,8 +216,10 @@ with st.sidebar:
             except Exception as e:
                 st.error(f"خطا: {e}")
 
+st.markdown("---") # Separator line between Toolbar and Main App
+
 # ==========================================
-# 5. MAIN UI (ULTRA COMPACT)
+# 5. MAIN APP INTERFACE
 # ==========================================
 def search_names(search_term: str):
     if not search_term: return existing_names
@@ -230,33 +227,34 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
-# SEARCH BOX (Top of Screen)
+# SEARCH
 if st.session_state.active_name is None:
-    # No title, just the search box immediately
+    # We put the Title and Count next to the Search Box
+    c_head1, c_head2 = st.columns([4, 1])
+    with c_head1: st.title("🔍 جستجوی پرونده")
+    with c_head2: st.metric("کل", len(existing_names))
+    
     selected_value = st_searchbox(
         search_names, 
         key="search_box_main", 
-        placeholder="🔍 جستجوی نام..."
+        placeholder="نام را تایپ کنید..."
     )
+    
     if selected_value:
         st.session_state.active_name = selected_value
         st.rerun()
-    
-    # Show count in small text below
-    st.caption(f"تعداد رکوردها: {len(existing_names)}")
 
-# ENTRY FORM
+# FORM
 else:
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
-    # Compact Header Row
-    c_status, c_close = st.columns([4, 1])
+    c_status, c_close = st.columns([5, 1])
     with c_status:
-        if is_edit_mode: st.success(f"✏️ **{locked_name}**")
-        else: st.warning(f"🆕 **{locked_name}**")
+        if is_edit_mode: st.success(f"✏️ ویرایش: **{locked_name}**")
+        else: st.warning(f"🆕 جدید: **{locked_name}**")
     with c_close:
-        if st.button("✖"):
+        if st.button("❌"):
             st.session_state.active_name = None
             st.rerun()
 
@@ -266,26 +264,26 @@ else:
         valid = [h for h in headers if h in form_headers]
         if not valid: return
         
-        st.markdown(f'<div class="form-card"><b>{title}</b></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="custom-header">{title}</div>', unsafe_allow_html=True)
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i % cols]:
                 val = current_data.get(h, "")
                 if h == 'سن': val = format_age(val)
-                st.text_input(h, value=str(val), key=f"input_{h}", label_visibility="visible")
+                st.text_input(h, value=str(val), key=f"input_{h}")
 
     with st.form("main_form"):
-        # Very compact layout
-        draw_section("👤 فردی", GROUP_PERSONAL, 2)
-        draw_section("📍 حادثه", GROUP_INCIDENT, 1)
-        draw_section("🔗 سایر", GROUP_OTHER, 1)
+        draw_section("👤 اطلاعات فردی", GROUP_PERSONAL, 3)
+        draw_section("📍 اطلاعات حادثه", GROUP_INCIDENT, 2)
+        draw_section("🔗 سایر اطلاعات", GROUP_OTHER, 2)
         
         used = set(GROUP_PERSONAL + GROUP_INCIDENT + GROUP_OTHER + ['اسم'])
         rem = [h for h in form_headers if h not in used]
-        if rem: draw_section("📂 دیگر", rem, 2)
+        if rem: draw_section("📂 موارد دیگر", rem, 3)
 
-        st.markdown("") # Tiny spacer
-        if st.form_submit_button("💾 ذخیره", type="primary"):
+        st.markdown("---")
+        
+        if st.form_submit_button("💾 ذخیره اطلاعات", type="primary"):
             try:
                 sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 row_data = []
@@ -303,7 +301,7 @@ else:
                 
                 st.toast("ذخیره شد", icon='✅')
                 get_data.clear()
-                time.sleep(0.5)
+                time.sleep(1)
                 st.session_state.active_name = None
                 st.rerun()
             except Exception as e:
