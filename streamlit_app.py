@@ -6,14 +6,13 @@ from streamlit_searchbox import st_searchbox
 import time
 
 # ==========================================
-# 1. CONFIGURATION (STRICT ORDER)
+# 1. CONFIGURATION
 # ==========================================
 
-# 1. Personal Info
+# Personal Info (Will be 3 Columns)
 GROUP_PERSONAL = ["سن", "تاریخ تولد", "محل تولد", "جنسیت", "اسم"]
 
-# 2. Incident Info (EXACT ORDER REQUESTED)
-# The App will fill: Right -> Middle -> Left (Row 1), then Right -> Middle ... (Row 2)
+# Incident Info (Will be 1 Column - VERTICAL LIST)
 GROUP_INCIDENT = [
     "تاریخ شمسی", 
     "تاریخ میلادی", 
@@ -25,12 +24,12 @@ GROUP_INCIDENT = [
     "آرامگاه"
 ]
 
-# 3. Other Info
+# Other Info (Will be 2 Columns)
 GROUP_OTHER = ["اکانت در شبکه‌های اجتماعی", "بستگان", "توضیحات"]
 
 NUMERIC_FIELDS = ["سن"]
 
-st.set_page_config(page_title=" جاویدنامان", layout="wide", page_icon="📋")
+st.set_page_config(page_title="مدیریت جاویدنامان", layout="wide", page_icon="📋")
 
 st.markdown("""<style>
     [data-testid="stAppViewContainer"] { direction: rtl; text-align: right; font-family: 'Tahoma', sans-serif; }
@@ -66,9 +65,7 @@ if 'active_name' not in st.session_state:
 
 try:
     df = get_data()
-    
-    # ⚠️ CRITICAL FIX: STRIP SPACES from headers
-    # This ensures "تاریخ  شمسی" (sheet) matches "تاریخ شمسی" (code)
+    # Clean Headers
     df.columns = df.columns.astype(str).str.strip()
     
     all_headers = df.columns.tolist()
@@ -89,7 +86,7 @@ def search_names(search_term: str):
 # ==========================================
 c_title, c_count = st.columns([5, 1])
 with c_title:
-    st.title("📋 ")
+    st.title("📋 سامانه مدیریت هوشمند")
 with c_count:
     st.metric(label="تعداد کل", value=len(existing_names))
 
@@ -131,21 +128,17 @@ else:
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
 
-    # --- HELPER FUNCTION (STRICT ORDER) ---
-    def draw_inputs(headers_list, container, data_dict, inputs_dict):
-        # 1. We start with YOUR list (headers_list) to preserve order
-        # 2. We keep only ones that actually exist in the Sheet (valid_headers)
+    # --- UPDATED HELPER: Accepts 'num_columns' ---
+    def draw_inputs(headers_list, container, data_dict, inputs_dict, num_columns=3):
         valid_headers = [h for h in headers_list if h in form_headers]
-        
         if not valid_headers: return
         
-        cols = container.columns(3)
+        # We create columns based on the requested number
+        cols = container.columns(num_columns)
+        
         for i, header in enumerate(valid_headers):
-            # i % 3 logic: 
-            # 0 -> Right Column
-            # 1 -> Middle Column
-            # 2 -> Left Column
-            with cols[i % 3]:
+            # i % num_columns ensures it wraps correctly
+            with cols[i % num_columns]:
                 val = data_dict.get(header, "")
                 inputs_dict[header] = st.text_input(header, value=str(val), key=f"input_{header}")
                 drawn_headers.add(header)
@@ -157,25 +150,24 @@ else:
         user_inputs = {}
         drawn_headers = set() 
 
-        # SECTION 1: PERSONAL
+        # SECTION 1: PERSONAL (3 Columns - Grid)
         st.markdown('<div class="section-header">👤 اطلاعات فردی</div>', unsafe_allow_html=True)
-        draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs)
+        draw_inputs(GROUP_PERSONAL, st, current_data, user_inputs, num_columns=3)
 
-        # SECTION 2: INCIDENT (Will follow your list exactly)
+        # SECTION 2: INCIDENT (1 Column - STRICT VERTICAL ORDER)
+        # ✅ This ensures strict Top-to-Bottom order as requested
         st.markdown('<div class="section-header">📍 اطلاعات حادثه</div>', unsafe_allow_html=True)
-        draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs)
+        draw_inputs(GROUP_INCIDENT, st, current_data, user_inputs, num_columns=1)
 
-        # SECTION 3: OTHER
+        # SECTION 3: OTHER (2 Columns - Balanced)
         st.markdown('<div class="section-header">🔗 سایر موارد</div>', unsafe_allow_html=True)
-        draw_inputs(GROUP_OTHER, st, current_data, user_inputs)
+        draw_inputs(GROUP_OTHER, st, current_data, user_inputs, num_columns=2)
 
         # SECTION 4: CATCH-ALL
-        # If any boxes appear here, it means the NAME in the code didn't match the Google Sheet
         remaining_headers = [h for h in form_headers if h not in drawn_headers]
         if remaining_headers:
-            st.markdown('<div class="section-header">⚠️ ستون‌های نامنطبق (بررسی کنید)</div>', unsafe_allow_html=True)
-            st.caption("نام این ستون‌ها در کد و گوگل شیت یکی نیست، برای همین ترتیب ندارند:")
-            draw_inputs(remaining_headers, st, current_data, user_inputs)
+            st.markdown('<div class="section-header">📂 ستون‌های دسته‌بندی نشده</div>', unsafe_allow_html=True)
+            draw_inputs(remaining_headers, st, current_data, user_inputs, num_columns=3)
 
         st.markdown("---")
         
@@ -184,7 +176,6 @@ else:
             submitted = st.form_submit_button("💾 ثبت نهایی")
 
         if submitted:
-            # Simple numeric check
             validation_errors = []
             for field in NUMERIC_FIELDS:
                 if field in user_inputs and user_inputs[field].strip():
