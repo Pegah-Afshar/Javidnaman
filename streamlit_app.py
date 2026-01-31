@@ -5,6 +5,7 @@ from google.oauth2.service_account import Credentials
 from streamlit_searchbox import st_searchbox
 import time
 import numpy as np
+import uuid
 
 # ==========================================
 # 1. CONFIGURATION
@@ -38,7 +39,25 @@ st.markdown("""<style>
 </style>""", unsafe_allow_html=True)
 
 # ==========================================
-# 2. HELPER FUNCTIONS
+# 2. STATE MANAGEMENT (THE FIX)
+# ==========================================
+if 'form_id' not in st.session_state:
+    st.session_state.form_id = str(uuid.uuid4())
+
+if 'active_name' not in st.session_state:
+    st.session_state.active_name = None
+
+def reset_app():
+    """Forces a complete reset of the form and search box"""
+    st.session_state.active_name = None
+    st.session_state.form_id = str(uuid.uuid4()) # Change ID to force empty boxes
+    
+    # Nuke the search box state
+    if "search_box_main" in st.session_state:
+        del st.session_state["search_box_main"]
+
+# ==========================================
+# 3. HELPER FUNCTIONS
 # ==========================================
 def clean_str(val):
     if val is None: return ""
@@ -61,12 +80,8 @@ def get_fingerprint(text):
     t = t.replace(" ", "").replace("\u200c", "").replace("\t", "")
     return t
 
-def clear_form_state():
-    """Forcefully clears active name to reset the view"""
-    st.session_state.active_name = None
-
 # ==========================================
-# 3. BACKEND
+# 4. BACKEND
 # ==========================================
 @st.cache_resource
 def get_connection():
@@ -84,12 +99,6 @@ def get_data():
     df = df.astype(str)
     return df
 
-# ==========================================
-# 4. LOAD DATA
-# ==========================================
-if 'active_name' not in st.session_state:
-    st.session_state.active_name = None
-
 try:
     df = get_data()
     df.columns = [clean_str(c) for c in df.columns]
@@ -101,7 +110,7 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 🛠️ TOP TOOLBAR
+# 5. TOP TOOLBAR
 # ==========================================
 c_tools_1, c_tools_2, c_tools_3 = st.columns([1, 1, 2])
 
@@ -200,7 +209,7 @@ with c_tools_3:
 st.divider()
 
 # ==========================================
-# 5. MAIN APP INTERFACE
+# 6. MAIN INTERFACE
 # ==========================================
 def search_names(search_term: str):
     if not search_term: return existing_names
@@ -208,33 +217,39 @@ def search_names(search_term: str):
     if search_term not in matches: matches.insert(0, search_term)
     return matches
 
+# --- SCREEN 1: SEARCH ---
 if st.session_state.active_name is None:
-    # --- SEARCH VIEW ---
+    # Use standard container
     with st.container():
         c_head1, c_head2 = st.columns([4, 1])
         with c_head1: st.subheader("🔍 جستجوی پرونده")
         with c_head2: st.caption(f"تعداد: {len(existing_names)}")
         
+        # SEARCH BOX
+        # We check if 'search_box_main' is in session state to handle resets
         selected_value = st_searchbox(
             search_names, 
             key="search_box_main", 
-            placeholder="نام را تایپ کنید..."
+            placeholder="نام را تایپ کنید (اینتر بزنید)..."
         )
+        
         if selected_value:
             st.session_state.active_name = selected_value
             st.rerun()
+
+# --- SCREEN 2: FORM ---
 else:
-    # --- FORM VIEW ---
     locked_name = st.session_state.active_name
     is_edit_mode = locked_name in existing_names
     
+    # Header
     c_status, c_close = st.columns([5, 1])
     with c_status:
         if is_edit_mode: st.success(f"✏️ ویرایش: **{locked_name}**")
         else: st.warning(f"🆕 جدید: **{locked_name}**")
     with c_close:
         if st.button("❌", use_container_width=True):
-            clear_form_state()
+            reset_app() # Force Clean Reset
             st.rerun()
 
     current_data = df[df['اسم'] == locked_name].iloc[0].to_dict() if is_edit_mode else {}
@@ -242,14 +257,16 @@ else:
     def draw_section(title, headers, cols=3):
         valid = [h for h in headers if h in form_headers]
         if not valid: return
+        
         st.markdown(f'<div class="custom-header">{title}</div>', unsafe_allow_html=True)
         cc = st.columns(cols)
         for i, h in enumerate(valid):
             with cc[i % cols]:
                 val = current_data.get(h, "")
                 if h == 'سن': val = format_age(val)
-                # 🔥 KEY FIX: Unique key per name ensures fresh boxes on new entry
-                unique_key = f"input_{h}_{locked_name}"
+                
+                # 🔥 THE FIX: Use form_id in the key to force fresh boxes
+                unique_key = f"{h}_{st.session_state.form_id}"
                 st.text_input(h, value=str(val), key=unique_key)
 
     with st.form("main_form"):
@@ -268,8 +285,10 @@ else:
                 sheet = get_connection().open_by_url(st.secrets["public_gsheets_url"]).get_worksheet(0)
                 row_data = []
                 for h in all_headers:
-                    # Fetch using the UNIQUE key
-                    val = st.session_state.get(f"input_{h}_{locked_name}", "")
+                    # Retrieve using the UNIQUE key
+                    unique_key = f"{h}_{st.session_state.form_id}"
+                    val = st.session_state.get(unique_key, "")
+                    
                     if h == 'اسم': row_data.append(locked_name)
                     elif h == 'سن': row_data.append(format_age(val))
                     else: row_data.append(val)
@@ -283,7 +302,9 @@ else:
                 st.toast("اطلاعات ذخیره شد.", icon='✅')
                 get_data.clear()
                 time.sleep(1)
-                clear_form_state() # Reset view
+                
+                # 🔥 FORCE RESET EVERYTHING
+                reset_app()
                 st.rerun()
             except Exception as e:
                 st.error(f"خطا در ذخیره سازی: {e}")
