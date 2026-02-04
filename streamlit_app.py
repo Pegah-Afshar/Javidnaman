@@ -5,7 +5,7 @@ from google.oauth2.service_account import Credentials
 from streamlit_searchbox import st_searchbox
 import time
 import uuid
-df = conn.read(spreadsheet=st.secrets["gsheets_url"], ttl=0)
+
 # ==========================================
 # 1. SETUP
 # ==========================================
